@@ -10,7 +10,7 @@
     "data": "/kaggle/input/competitions/gemma-4-developer-agent",
     "model": "/kaggle/input/models/google/gemma-4/other/gemma-4-31b-it-qat-w4a16-ct/2",
     "wheelhouse": "/kaggle/input/datasets/metric/gemma-4-developer-agent-wheelhouse",
-    "output": "/kaggle/working/results"
+    "output": "/kaggle/working/artifacts/results"
   },
   "packages": {"swegemma": "0.2.7", "adk-submission": "0.2.11", "adk-eval-core": "0.1.0"},
   "verification_timeout_seconds": 300,

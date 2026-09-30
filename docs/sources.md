@@ -7,7 +7,9 @@
 - [競技データ](https://www.kaggle.com/competitions/gemma-4-developer-agent/data)
 - [公式スターター](https://www.kaggle.com/code/ryanholbrook/getting-started-gemma-4-developer-agent)
 - [公式Wheelhouse](https://www.kaggle.com/datasets/metric/gemma-4-developer-agent-wheelhouse)
-- [Streamlitの画面テスト](https://docs.streamlit.io/develop/api-reference/app-testing)
+- [Kaggle公式CLI](https://github.com/Kaggle/kaggle-cli/blob/main/skills/references/kernels.md)
+- [Kaggle公式SDKの型と既定値](https://github.com/Kaggle/kaggle-sdk-python/blob/main/kagglesdk/kernels/types/kernels_api_service.py)
+- [uvの環境設定](https://docs.astral.sh/uv/concepts/projects/config/)
 
 `agent/`の初期設定とプロンプトは競技データの`sample_submission`に由来します。配布LoRAは取得元に残し、Kaggle上で読み込みます。サンプリング設定は公式スターターと同じ内容です。第三者の資料・モデル・コードの権利を、このリポジトリのコードと一括して再許諾しません。
 

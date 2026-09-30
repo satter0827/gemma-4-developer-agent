@@ -67,6 +67,8 @@ def load_run(path: Path) -> Run:
     manifest = read_object(path / "manifest.json")
     if manifest.get("schema_version") != 1:
         raise ValueError("Unsupported manifest schema")
+    if not isinstance(manifest.get("run_id"), str) or not manifest["run_id"]:
+        raise ValueError("Invalid run ID")
     ids = manifest.get("task_ids")
     if (
         not isinstance(ids, list)
