@@ -1,0 +1,38 @@
+[project]
+name = "gemma-agent-dev"
+version = "0.1.0"
+description = "Reproducible Gemma 4 competition evaluation and result viewer"
+requires-python = ">=3.12,<3.13"
+dependencies = ["PyYAML>=6.0.2,<7", "streamlit>=1.50,<2"]
+
+[project.scripts]
+gemma-dev = "gemma_agent_dev.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gemma_agent_dev"]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "ruff>=0.12,<1", "mypy>=1.17,<2", "types-PyYAML>=6,<7"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests", "kaggle"]
+
+[[tool.mypy.overrides]]
+module = ["swegemma.*", "adk_submission.*", "adk_eval_core.*", "google.adk.*", "litellm", "torch"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
