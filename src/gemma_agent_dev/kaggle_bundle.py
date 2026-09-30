@@ -14,7 +14,7 @@ from gemma_agent_dev.config import EvaluationSettings
 
 def prepare(root: Path, destination: Path) -> str:
     EvaluationSettings.load(root / "agent/eval_config.yaml")
-    config = json.loads((root / "configs/kaggle.json").read_text())
+    config = json.loads((root / "configs/runtime.json").read_text())
     if destination.exists():
         raise FileExistsError(destination)
     files = sorted(
@@ -32,7 +32,7 @@ def prepare(root: Path, destination: Path) -> str:
             ],
             *root.glob("agent/**/*.yaml"),
             *root.glob("agent/**/*.md"),
-            root / "configs/kaggle.json",
+            root / "configs/runtime.json",
             root / "kaggle/entry.py",
         ]
     )

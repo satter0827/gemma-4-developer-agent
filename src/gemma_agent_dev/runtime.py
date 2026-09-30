@@ -118,7 +118,7 @@ async def verify_controls(config: Any, tasks: list[Any], output: Path) -> bool:
 
 
 def run(root: Path, provenance: dict[str, Any]) -> None:
-    config = json.loads((root / "configs/kaggle.json").read_text())
+    config = json.loads((root / "configs/runtime.json").read_text())
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
     output = Path(config["paths"]["output"]) / run_id
     output.mkdir(parents=True, exist_ok=False)
