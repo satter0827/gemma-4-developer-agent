@@ -122,6 +122,7 @@ def run(root: Path, provenance: dict[str, Any]) -> None:
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
     output = Path(config["paths"]["output"]) / run_id
     output.mkdir(parents=True, exist_ok=False)
+    os.chdir(output)
     manifest: dict[str, Any] = {
         "schema_version": 1,
         "run_id": run_id,

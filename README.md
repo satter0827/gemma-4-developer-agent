@@ -1,49 +1,58 @@
 # Gemma 4 Developer Agent
 
-KaggleのGemma 4 Developer Agent Competitionに向けた、提出エージェントと評価結果の閲覧アプリです。公式サンプルの構成を維持し、評価条件と提出物を追跡できるようにします。
+KaggleのGemma 4 Developer Agent Competitionに向けた、提出エージェントと評価用CLIです。公式サンプルの構成を維持し、評価条件と提出物を追跡します。
 
 ## 開発環境
 
 Python 3.12、uv、Gitを使用します。Kaggleでの実行には、認証済みのKaggle CLIとコンペ参加が必要です。
 
 ```sh
-uv sync --frozen --no-editable --reinstall-package gemma-agent-dev
+cd /Users/takafumi/Developer/personal/gemma-4-developer-agent
+make setup
 make check
 ```
 
-通常のwheelとしてインストールし、テストでも配布されるパッケージを読み込みます。コード変更後は再インストールが必要です。`make check`は再インストールとすべての品質チェックを実行します。
+開発環境はiCloud外に置きます。Makefileを通して実行すると、仮想環境、キャッシュ、一時ファイルはすべて`artifacts/`へ保存されます。通常のwheelとしてインストールし、コード変更後は`make setup`で更新します。`make check`は更新とすべての品質チェックを実行します。
 
 ## Kaggleで評価する
 
 ```sh
-uv run --no-sync gemma-dev prepare-kaggle --output build/kaggle-run-01
-kaggle kernels push -p build/kaggle-run-01
+make cli ARGS='prepare-kaggle --name baseline-02'
+kaggle kernels push -p artifacts/kaggle/baseline-02
 kaggle kernels status satter0927/gemma-4-developer-agent-baseline
-kaggle kernels output satter0927/gemma-4-developer-agent-baseline -p results/kaggle-run-01
+kaggle kernels logs satter0927/gemma-4-developer-agent-baseline
+kaggle kernels files satter0927/gemma-4-developer-agent-baseline
+kaggle quota
+kaggle kernels output satter0927/gemma-4-developer-agent-baseline -p artifacts/results/baseline-02
 ```
 
-生成するNotebookはPrivate、インターネット接続は無効です。初回は公式スターターと同じ2課題を評価します。評価の前に、各リポジトリの修正前・正解パッチ適用後の検証を行います。前提の検証に失敗した場合は推論を開始せず、原因をログに保存します。
+生成するNotebookはPrivate、インターネット接続は無効です。初回は公式スターターと同じ2課題を評価します。評価前に、各リポジトリの修正前・正解パッチ適用後の検証を行います。前提検証に失敗した場合は推論を開始せず、原因をログに保存します。
 
-出力先は毎回新しく指定してください。アップロードするファイルとソースのハッシュは、生成先の`source-manifest.json`で確認できます。モデルとデータはKaggleの入力から読み込み、ローカルからアップロードしません。
+生成先の名前は毎回新しく指定してください。既存フォルダーへの上書きはできません。送信対象とソースのハッシュは`source-manifest.json`で確認できます。モデルとデータはKaggleの入力から読み込みます。
 
-評価が実行されると、結果フォルダーに`manifest.json`、公式の集計・課題別結果・ログと、検証済みの`submission.zip`を保存します。Notebookの実行はコンペへの提出ではありません。
+既存実行の状態を確認してから次をアップロードします。コードの保存、実行開始、完了は別々に確認してください。Notebookの実行はコンペへの提出ではありません。
 
-## 結果を見る
+## 結果を確認する
 
 ```sh
-uv run --no-sync gemma-dev view --results results
+make cli ARGS='results'
+make cli ARGS='show RUN_ID'
+make cli ARGS='show RUN_ID --task fastapi_15661 --artifact patch'
+make cli ARGS='compare RUN_ID_A RUN_ID_B'
 ```
 
-ブラウザーで `http://127.0.0.1:8501` を開きます。結果の閲覧と比較だけを行い、評価の開始やデータの変更は行いません。未完了・破損した実験には解決率を表示せず、異なる実行条件の比較には注意を表示します。
+`RUN_ID`には`results`で表示された実行IDを指定します。詳細ファイルは`patch`、`test-log`、`agent-log`、`trace`から選べます。元のログとトレースは保存時の内容で表示します。
+
+一覧には状態、最後の実行段階、予定・完了・解決件数、解決率、所要時間を表示します。未完了の解決率は表示しません。比較では課題ごとの結果と時間、実行条件の差を確認できます。正常な表示と結果未取得は終了コード0、読み込み・検証エラーは1、引数エラーは2です。
 
 ## 構成
 
 - `agent/`：提出するYAMLとプロンプト。配布LoRAはKaggle上で追加します。
-- `src/gemma_agent_dev/`：評価の接続処理、提出物生成、結果の読み込み、閲覧画面。
-- `configs/`、`kaggle/`：GPU・課題・依存関係の設定とKaggle起動処理。
-- `tests/`：設定、提出物、結果の整合性、画面のテスト。
-- `docs/`：設計、評価手順、出典、検証状況。
+- `src/gemma_agent_dev/`：評価の接続処理、提出物生成、結果の読み込み、CLI。
+- `configs/`、`kaggle/`：実行条件とKaggle起動処理。
+- `tests/`、`docs/`：テスト、設計、運用手順、検証状況。
+- `artifacts/`：`kaggle/`、`results/`、`reference/`、`venv/`、`cache/`、`tmp/`に生成物を集約します。Git管理対象外です。
 
 詳しくは[設計](docs/design.md)、[評価と提出の手順](docs/evaluation.md)、[検証状況](docs/validation.md)を参照してください。
 
-リポジトリはコンペ期間中Privateで運用します。終了後の公開は、競技ルールと各資産の再配布条件を確認してから行います。
+リポジトリと開発用Kaggle資産はコンペ期間中Privateで運用します。終了後の公開は、競技ルールと各資産の再配布条件を確認してから行います。
