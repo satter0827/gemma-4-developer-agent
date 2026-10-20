@@ -147,3 +147,22 @@ def test_archive_size_empty_and_duplicate_checks(tmp_path: Path) -> None:
         pass
     with pytest.raises(ValueError, match="Empty"):
         extract_archive(source, tmp_path / "out", 100)
+
+
+@pytest.mark.parametrize("cyclic", [False, True])
+def test_package_initializer_imports_are_resolved(tmp_path: Path, cyclic: bool) -> None:
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "__init__.py").write_text("from . import child")
+    (source / "child.py").write_text("import pkg" if cyclic else "pass")
+    policy = {
+        "roots": {"src": "pkg"},
+        "modules": {"core": ["pkg", "pkg.child"]},
+        "allowed": {"core": ["core"]},
+        "numeric_parameters": [],
+        "gpu_free_roles": [],
+        "inference_imports": [],
+    }
+    errors = CHECKER["check"](tmp_path, policy)
+    assert bool(errors) is cyclic
+    assert not errors or "Import cycle" in errors[0]

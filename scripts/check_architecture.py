@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 
-def imports(tree: ast.AST, module: str, known: set[str]) -> set[str]:
+def imports(tree: ast.AST, module: str, known: set[str], *, is_package: bool = False) -> set[str]:
     edges: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -16,10 +16,13 @@ def imports(tree: ast.AST, module: str, known: set[str]) -> set[str]:
         elif isinstance(node, ast.ImportFrom):
             base = node.module or ""
             if node.level:
-                parts = module.split(".")[: -node.level]
+                location = module + ".__init__" if is_package else module
+                parts = location.split(".")[: -node.level]
                 base = ".".join([*parts, *([base] if base else [])])
-            edges.add(base)
-            edges.update(f"{base}.{a.name}" for a in node.names if f"{base}.{a.name}" in known)
+            children = {f"{base}.{a.name}" for a in node.names if f"{base}.{a.name}" in known}
+            if base != module or not children:
+                edges.add(base)
+            edges.update(children)
     return edges
 
 
@@ -76,7 +79,7 @@ def check(root: Path, policy: dict[str, Any]) -> list[str]:
             errors.append(f"Unclassified module: {name}")
             continue
         tree = ast.parse(path.read_text())
-        dependencies = imports(tree, name, known)
+        dependencies = imports(tree, name, known, is_package=path.name == "__init__.py")
         graph[name] = dependencies & known
         for dependency in dependencies:
             if name.startswith("gemma_agent_dev") and dependency.split(".")[0] in {
