@@ -198,6 +198,13 @@ def main(argv: list[str] | None = None) -> int:
             if differences:
                 print("比較条件に差があります。")
                 for field in differences:
+                    a, b = condition(left, field), condition(right, field)
+                    if field == "submission_files" and isinstance(a, dict) and isinstance(b, dict):
+                        changed = sorted(
+                            name for name in a.keys() | b.keys() if a.get(name) != b.get(name)
+                        )
+                        print(f"{CONDITION_LABELS[field]}：" + "、".join(changed))
+                        continue
                     print(
                         f"{CONDITION_LABELS[field]}："
                         + json.dumps(

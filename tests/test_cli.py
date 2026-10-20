@@ -201,4 +201,5 @@ def test_comparison_reports_a_changed_agent_even_with_equal_budgets(
     assert main(["compare", "run-a", "run-b"]) == 0
     output = capsys.readouterr().out
     assert "エージェント・提出ファイル" in output and "prompts/system.md" in output
+    assert "agent.yaml" not in output
     assert "同じ課題と実行条件" not in output
