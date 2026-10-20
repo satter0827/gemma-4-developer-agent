@@ -29,6 +29,7 @@ def make_run(tmp_path: Path) -> Callable[..., Path]:
             "tasks_sha256": "fixture",
             "verification_timeout_seconds": 300,
             "vllm_config": {"max_model_len": 32768},
+            "submission_files": {"agent.yaml": "fixture", "prompts/system.md": "fixture"},
             "runtime_config": {
                 "model_source": "fixture",
                 "docker_image": "fixture",

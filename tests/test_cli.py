@@ -188,3 +188,17 @@ def test_prepare_rejects_missing_or_invalid_configuration(
     )
     assert capsys.readouterr().err
     assert not (project / "artifacts").exists()
+
+
+def test_comparison_reports_a_changed_agent_even_with_equal_budgets(
+    project: Path, make_run: Callable[..., Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    import_run(project, make_run())
+    other = import_run(project, make_run("run-b"))
+    manifest = json.loads((other / "manifest.json").read_text())
+    manifest["submission_files"]["prompts/system.md"] = "changed"
+    (other / "manifest.json").write_text(json.dumps(manifest))
+    assert main(["compare", "run-a", "run-b"]) == 0
+    output = capsys.readouterr().out
+    assert "エージェント・提出ファイル" in output and "prompts/system.md" in output
+    assert "同じ課題と実行条件" not in output

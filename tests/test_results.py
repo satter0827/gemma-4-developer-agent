@@ -112,3 +112,37 @@ def test_comparison_checks_verification_time_and_applied_server_defaults(
     manifest[field] = 600 if field == "verification_timeout_seconds" else {"max_model_len": 16384}
     (path / "manifest.json").write_text(json.dumps(manifest))
     assert comparison_differences(left, load_run(path)) == [field]
+
+
+@pytest.mark.parametrize(
+    "member", ["agent.yaml", "prompts/system.md", "adapters/main/adapter_config.json"]
+)
+def test_changed_agent_or_adapter_is_a_different_comparison_condition(
+    make_run: Callable[..., Path], member: str
+) -> None:
+    left = load_run(make_run())
+    directory = make_run("run-b")
+    manifest = json.loads((directory / "manifest.json").read_text())
+    manifest["submission_files"][member] = "changed"
+    (directory / "manifest.json").write_text(json.dumps(manifest))
+    assert comparison_differences(left, load_run(directory)) == ["submission_files"]
+
+
+def test_missing_submission_inventory_cannot_establish_equivalence(
+    make_run: Callable[..., Path],
+) -> None:
+    directory = make_run()
+    manifest = json.loads((directory / "manifest.json").read_text())
+    del manifest["submission_files"]
+    (directory / "manifest.json").write_text(json.dumps(manifest))
+    run = load_run(directory)
+    assert comparison_differences(run, run) == ["submission_files"]
+
+
+def test_invalid_submission_inventory_is_a_read_error(make_run: Callable[..., Path]) -> None:
+    directory = make_run()
+    manifest = json.loads((directory / "manifest.json").read_text())
+    manifest["submission_files"] = []
+    (directory / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="submission_files"):
+        load_run(directory)

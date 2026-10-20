@@ -127,7 +127,7 @@ def load_run(path: Path, *, require_evaluation: bool = False) -> Run:
         raise ValueError("Invalid or duplicate planned task IDs")
     if manifest.get("status") not in {"running", "completed", "failed"}:
         raise ValueError("Invalid run status")
-    for field in ("evaluation", "environment", "runtime_config", "timings"):
+    for field in ("evaluation", "environment", "runtime_config", "timings", "submission_files"):
         if field in manifest and not isinstance(manifest[field], dict):
             raise ValueError(f"Invalid manifest mapping: {field}")
     rows: dict[str, dict[str, Any]] = {}
@@ -197,6 +197,7 @@ def comparison_differences(left: Run, right: Run) -> list[str]:
         "tasks_sha256",
         "verification_timeout_seconds",
         "vllm_config",
+        "submission_files",
     ):
         if field not in left.manifest or field not in right.manifest:
             differences.append(field)
