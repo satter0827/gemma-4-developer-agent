@@ -49,6 +49,8 @@ make cli ARGS='prepare-kaggle --name evaluation-5min --eval-config configs/evalu
 
 評価設定は、プロジェクト直下からの相対パス、またはプロジェクト内の絶対パスで指定します。元のファイルは変更せず、選択した設定をソースZIP内の`agent/eval_config.yaml`へ格納します。選択元、SHA-256、適用値は`source-manifest.json`と実行manifestに記録します。
 
+探索手順の改善版は`--eval-config configs/evaluation/5min-30tools.yaml`で5分・30回を選択します。CPU事前検証とGPU評価に同じ指定を渡してください。指示も変更しているため、前回の時間制限比較とは別の実験として扱います。
+
 既存実行の状態を確認してから次をアップロードします。コードの保存、実行開始、完了は別々に確認してください。Notebookの実行はコンペへの提出ではありません。
 
 ## 結果を確認する

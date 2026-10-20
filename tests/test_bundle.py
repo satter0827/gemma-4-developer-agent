@@ -60,24 +60,27 @@ def source_files(directory: Path) -> dict[str, bytes]:
         return {name: archive.read(name) for name in archive.namelist()}
 
 
-def test_selected_budget_changes_only_embedded_evaluation_configuration(tmp_path: Path) -> None:
+@pytest.mark.parametrize("selection", ["5min.yaml", "5min-30tools.yaml"])
+def test_selected_budget_changes_only_embedded_evaluation_configuration(
+    tmp_path: Path, selection: str
+) -> None:
     root = Path(__file__).resolve().parents[1]
     original = (root / "agent/eval_config.yaml").read_bytes()
     baseline, candidate, verification = (tmp_path / name for name in ("one", "five", "cpu"))
     one_digest = prepare(root, baseline)
-    five_digest = prepare(root, candidate, eval_config=Path("configs/evaluation/5min.yaml"))
+    five_digest = prepare(root, candidate, eval_config=Path("configs/evaluation") / selection)
     assert one_digest != five_digest
     assert five_digest == prepare(
-        root, verification, verify_only=True, eval_config=Path("configs/evaluation/5min.yaml")
+        root, verification, verify_only=True, eval_config=Path("configs/evaluation") / selection
     )
     one, five = source_files(baseline), source_files(candidate)
     assert one.keys() == five.keys()
     assert [name for name in one if one[name] != five[name]] == ["agent/eval_config.yaml"]
-    assert five["agent/eval_config.yaml"] == (root / "configs/evaluation/5min.yaml").read_bytes()
-    assert "configs/evaluation/5min.yaml" not in five
+    assert five["agent/eval_config.yaml"] == (root / "configs/evaluation" / selection).read_bytes()
+    assert not any(name.startswith("configs/evaluation/") for name in five)
     assert (root / "agent/eval_config.yaml").read_bytes() == original
     manifest = json.loads((candidate / "source-manifest.json").read_text())
-    assert manifest["evaluation_config"]["path"] == "configs/evaluation/5min.yaml"
+    assert manifest["evaluation_config"]["path"] == f"configs/evaluation/{selection}"
     assert manifest["evaluation_config"]["values"]["max_time_minutes"] == 5
     assert (
         manifest["evaluation_config"]["sha256"]
