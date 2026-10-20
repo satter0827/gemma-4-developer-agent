@@ -188,6 +188,8 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
         ids = config["task_ids"]
         select_tasks(tasks, ids)
         server = create_server(submission, config)
+        # The official server removes its temporary log when stopping.
+        (output / "vllm.log").hardlink_to(server.log_path)
         manifest["vllm_config"] = asdict(server.config)
         manifest["verification_timeout_seconds"] = config["verification_timeout_seconds"]
         models = server.create_model_registry(
@@ -262,8 +264,5 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
                 server.stop()
             except Exception as cleanup_error:
                 manifest["cleanup_error"] = str(cleanup_error)
-            log_path = Path(server.log_path)
-            if log_path.is_file():
-                shutil.copyfile(log_path, output / "vllm.log")
-                log_path.unlink()
+            Path(server.log_path).unlink(missing_ok=True)
         write_json(manifest_path, manifest)

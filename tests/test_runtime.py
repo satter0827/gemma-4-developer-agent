@@ -34,8 +34,14 @@ class ServerConfig:
 
 
 @pytest.mark.parametrize(
-    "verify_only,save_results,logged_error",
-    [(True, False, False), (False, True, False), (False, False, False), (False, True, True)],
+    "verify_only,save_results,logged_error,startup_error",
+    [
+        (True, False, False, False),
+        (False, True, False, False),
+        (False, False, False, False),
+        (False, True, True, False),
+        (False, False, False, True),
+    ],
 )
 def test_pipeline_verifies_before_model_start_and_validates_saved_results(
     tmp_path: Path,
@@ -43,6 +49,7 @@ def test_pipeline_verifies_before_model_start_and_validates_saved_results(
     verify_only: bool,
     save_results: bool,
     logged_error: bool,
+    startup_error: bool,
 ) -> None:
     root = tmp_path / "project"
     (root / "configs").mkdir(parents=True)
@@ -129,9 +136,13 @@ def test_pipeline_verifies_before_model_start_and_validates_saved_results(
         def start(self) -> None:
             assert calls == ["unmodified", "reference"] * 2
             calls.append("start")
+            if startup_error:
+                self.stop()
+                raise RuntimeError("Server startup failed")
 
         def stop(self) -> None:
             calls.append("stop")
+            Path(self.log_path).unlink(missing_ok=True)
 
     Path(Server.log_path).write_text("server log")
     tasks = [
@@ -160,9 +171,14 @@ def test_pipeline_verifies_before_model_start_and_validates_saved_results(
     monkeypatch.setattr(official, "create_server", lambda *_: Server())
     monkeypatch.setattr(official, "make_validator", lambda *_: lambda _: None)
     handlers = list(logging.getLogger("swegemma.evaluate").handlers)
-    failed = not verify_only and (not save_results or logged_error)
+    failed = not verify_only and (not save_results or logged_error or startup_error)
     if failed:
-        with pytest.raises(RuntimeError, match="reported errors" if logged_error else "artifacts"):
+        message = "artifacts"
+        if logged_error:
+            message = "reported errors"
+        if startup_error:
+            message = "startup failed"
+        with pytest.raises(RuntimeError, match=message):
             runtime.run(root, {"source_sha256": "fixture"}, verify_only=verify_only)
     else:
         runtime.run(root, {"source_sha256": "fixture"}, verify_only=verify_only)
