@@ -5,14 +5,21 @@
   "wheelhouse_source": "metric/gemma-4-developer-agent-wheelhouse",
   "docker_image": "gcr.io/kaggle-private-byod/python@sha256:37c64f7dd9c54116ecd1bcc88817c5469b88387388fade02bfa8bf3fc647d461",
   "machine_shape": "NvidiaL4",
-  "task_ids": ["fastapi_15661", "fastapi_15588"],
+  "task_ids": [
+    "fastapi_15661",
+    "fastapi_15588"
+  ],
   "paths": {
     "data": "/kaggle/input/competitions/gemma-4-developer-agent",
     "model": "/kaggle/input/models/google/gemma-4/other/gemma-4-31b-it-qat-w4a16-ct/2",
     "wheelhouse": "/kaggle/input/datasets/metric/gemma-4-developer-agent-wheelhouse",
     "output": "/kaggle/working/artifacts/results"
   },
-  "packages": {"swegemma": "0.2.7", "adk-submission": "0.2.11", "adk-eval-core": "0.1.0"},
+  "packages": {
+    "swegemma": "0.2.11",
+    "adk-submission": "0.2.13",
+    "adk-eval-core": "0.1.0"
+  },
   "verification_timeout_seconds": 300,
   "vllm": {
     "port": 8000,
@@ -27,8 +34,19 @@
     "max_loras": 8,
     "max_lora_rank": 128,
     "tensor_parallel_size": 4,
-    "startup_timeout": 1200
+    "startup_timeout": 1200,
+    "scheduler_reserve_full_isl": false
   },
-  "context_cache": {"min_tokens": 2048, "ttl_seconds": 1800, "cache_intervals": 10},
-  "compaction": {"compaction_interval": 15, "overlap_size": 2, "token_threshold": 14336, "event_retention_size": 5}
+  "context_cache": {
+    "min_tokens": 2048,
+    "ttl_seconds": 1800,
+    "cache_intervals": 10
+  },
+  "compaction": {
+    "compaction_interval": 15,
+    "overlap_size": 2,
+    "token_threshold": 14336,
+    "event_retention_size": 5
+  },
+  "verification_kernel_id": "satter0927/gemma-4-developer-agent-verification"
 }

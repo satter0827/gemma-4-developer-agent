@@ -3,6 +3,7 @@
 import json
 import math
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,15 @@ class Run:
     manifest: dict[str, Any]
     rows: dict[str, dict[str, Any]]
     problems: tuple[str, ...]
+    controls: dict[str, dict[str, Any]] = dataclass_field(default_factory=dict)
+
+    @property
+    def kind(self) -> str:
+        return str(self.manifest.get("kind", "evaluation"))
+
+    @property
+    def completed_count(self) -> int:
+        return len(self.controls) if self.kind == "verification" else len(self.rows)
 
     @property
     def task_ids(self) -> list[str]:
@@ -33,13 +43,18 @@ class Run:
     def complete(self) -> bool:
         return (
             self.manifest["status"] == "completed"
-            and set(self.rows) == set(self.task_ids)
+            and set(self.controls if self.kind == "verification" else self.rows)
+            == set(self.task_ids)
             and not self.problems
         )
 
     @property
     def resolution_rate(self) -> float | None:
-        return self.resolved / len(self.task_ids) if self.complete else None
+        return (
+            self.resolved / len(self.task_ids)
+            if self.kind == "evaluation" and self.complete
+            else None
+        )
 
 
 def validate_row(row: Any) -> dict[str, Any]:
@@ -63,8 +78,41 @@ def validate_row(row: Any) -> dict[str, Any]:
     return row
 
 
-def load_run(path: Path) -> Run:
+def read_controls(path: Path, ids: list[str]) -> dict[str, dict[str, Any]]:
+    records = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(records, list):
+        raise ValueError("Expected a control result list")
+    controls: dict[str, dict[str, Any]] = {}
+    for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("Invalid control record")
+        task_id = record.get("instance_id")
+        if not isinstance(task_id, str) or task_id not in ids or task_id in controls:
+            raise ValueError("Unknown or duplicate control task")
+        for label in ("unmodified", "reference"):
+            outcome = record.get(label)
+            if not isinstance(outcome, dict) or type(outcome.get("resolved")) is not bool:
+                raise ValueError("Invalid control outcome")
+            duration = outcome.get("duration_seconds")
+            if type(outcome.get("exit_code")) is not int or (
+                not isinstance(duration, int | float)
+                or isinstance(duration, bool)
+                or not math.isfinite(duration)
+                or duration < 0
+            ):
+                raise ValueError("Invalid control timing or exit code")
+            if outcome["resolved"] and (outcome["exit_code"] != 0 or outcome.get("error")):
+                raise ValueError("Control resolution conflicts with an error")
+        controls[task_id] = record
+    return controls
+
+
+def load_run(path: Path, *, require_evaluation: bool = False) -> Run:
     manifest = read_object(path / "manifest.json")
+    if manifest.get("kind", "evaluation") not in {"evaluation", "verification"}:
+        raise ValueError("Invalid run kind")
+    if require_evaluation and manifest.get("kind", "evaluation") != "evaluation":
+        raise ValueError("Expected an evaluation run")
     if manifest.get("schema_version") != 1:
         raise ValueError("Unsupported manifest schema")
     if not isinstance(manifest.get("run_id"), str) or not manifest["run_id"]:
@@ -79,13 +127,35 @@ def load_run(path: Path) -> Run:
         raise ValueError("Invalid or duplicate planned task IDs")
     if manifest.get("status") not in {"running", "completed", "failed"}:
         raise ValueError("Invalid run status")
-    for field in ("evaluation", "environment", "runtime_config", "timings"):
+    for field in ("evaluation", "environment", "runtime_config", "timings", "submission_files"):
         if field in manifest and not isinstance(manifest[field], dict):
             raise ValueError(f"Invalid manifest mapping: {field}")
     rows: dict[str, dict[str, Any]] = {}
     seen: set[str] = set()
     problems: list[str] = []
+    if manifest.get("kind") == "verification":
+        controls: dict[str, dict[str, Any]] = {}
+        control_file = path / "controls.json"
+        try:
+            if control_file.exists() or manifest["status"] == "completed":
+                controls = read_controls(control_file, ids)
+            if manifest["status"] == "completed" and (
+                set(controls) != set(ids)
+                or manifest.get("controls_passed") is not True
+                or any(
+                    row["unmodified"]["resolved"] or not row["reference"]["resolved"]
+                    for row in controls.values()
+                )
+            ):
+                problems.append("Completed verification has missing or failed controls")
+        except (OSError, ValueError, TypeError) as error:
+            problems.append(f"Cannot read controls: {error}")
+        return Run(path, manifest, rows, tuple(problems), controls)
     result_file = path / "task_results.jsonl"
+    summary_file = path / "summary.json"
+    required = require_evaluation or manifest["status"] == "completed"
+    if not required and not result_file.exists() and not summary_file.exists():
+        return Run(path, manifest, rows, ())
     if not result_file.is_file():
         problems.append("Missing task_results.jsonl")
     else:
@@ -103,23 +173,32 @@ def load_run(path: Path) -> Run:
             except (ValueError, TypeError) as error:
                 problems.append(f"Line {line_number}: {error}")
     try:
-        summary = read_object(path / "summary.json")
+        summary = read_object(summary_file)
         if summary.get("total_tasks") != len(rows) or summary.get("resolved") != sum(
             row["resolved"] for row in rows.values()
         ):
             problems.append("Summary disagrees with task results")
     except (OSError, ValueError) as error:
         problems.append(f"Cannot read summary: {error}")
-    if manifest["status"] == "completed" and set(rows) != set(ids):
+    if required and set(rows) != set(ids):
         problems.append("Completed run has missing task results")
     return Run(path, manifest, rows, tuple(problems))
 
 
 def comparison_differences(left: Run, right: Run) -> list[str]:
+    if left.kind != "evaluation" or right.kind != "evaluation":
+        raise ValueError("Reference verification is not an agent evaluation")
     differences = []
     if set(left.task_ids) != set(right.task_ids):
         differences.append("task_ids")
-    for field in ("evaluation", "environment", "tasks_sha256"):
+    for field in (
+        "evaluation",
+        "environment",
+        "tasks_sha256",
+        "verification_timeout_seconds",
+        "vllm_config",
+        "submission_files",
+    ):
         if field not in left.manifest or field not in right.manifest:
             differences.append(field)
         elif left.manifest[field] != right.manifest[field]:

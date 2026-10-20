@@ -16,7 +16,10 @@ class EvaluationSettings:
 
     @classmethod
     def load(cls, path: Path) -> "EvaluationSettings":
-        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        try:
+            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except yaml.YAMLError as error:
+            raise ValueError(f"Invalid evaluation YAML: {path.name}") from error
         if not isinstance(document, dict) or not isinstance(document.get("evaluation"), dict):
             raise ValueError("Expected an evaluation mapping")
         values = document["evaluation"]

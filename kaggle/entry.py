@@ -12,13 +12,15 @@ from typing import Any
 ARTIFACTS_ROOT = Path("/kaggle/working/artifacts")
 
 
-def main(source_b64: str, provenance: dict[str, Any]) -> None:
+def main(source_b64: str, provenance: dict[str, Any], *, verify_only: bool = False) -> None:
     payload = base64.b64decode(source_b64, validate=True)
     if hashlib.sha256(payload).hexdigest() != provenance["source_sha256"]:
         raise ValueError("Source bundle checksum mismatch")
     temporary = ARTIFACTS_ROOT / "tmp"
     temporary.mkdir(parents=True, exist_ok=True)
     os.environ["TMPDIR"] = str(temporary)
+    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+    sys.dont_write_bytecode = True
     tempfile.tempdir = str(temporary)
     sys.pycache_prefix = str(ARTIFACTS_ROOT / "cache/python")
     with tempfile.TemporaryDirectory(prefix="gemma-source-", dir=temporary) as directory:
@@ -31,4 +33,4 @@ def main(source_b64: str, provenance: dict[str, Any]) -> None:
         sys.path.insert(0, str(root / "src"))
         from gemma_agent_dev.runtime import run
 
-        run(root, provenance)
+        run(root, provenance, verify_only=verify_only)

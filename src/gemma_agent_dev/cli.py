@@ -19,6 +19,9 @@ CONDITION_LABELS = {
     "evaluation": "実行上限",
     "environment": "実行環境",
     "tasks_sha256": "課題データ",
+    "verification_timeout_seconds": "パッチ検証時間",
+    "vllm_config": "推論サーバー設定",
+    "submission_files": "エージェント・提出ファイル",
     "model_source": "モデル",
     "docker_image": "実行イメージ",
     "vllm": "推論設定",
@@ -71,6 +74,15 @@ def find_run(runs: list[Run], run_id: str) -> Run:
 
 
 def task_status(run: Run, task: str) -> str:
+    if run.kind == "verification":
+        record = run.controls.get(task)
+        if record is None:
+            return "未完了"
+        return (
+            "検証通過"
+            if record["reference"]["resolved"] and not record["unmodified"]["resolved"]
+            else "検証失敗"
+        )
     row = run.rows.get(task)
     if row is None:
         return "未完了"
@@ -102,6 +114,8 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     prepare = commands.add_parser("prepare-kaggle", help="Private用の提出準備コードを生成")
     prepare.add_argument("--name", required=True, help="生成先の名前")
+    prepare.add_argument("--eval-config", type=Path, help="プロジェクト内の評価設定ファイル")
+    prepare.add_argument("--verify-only", action="store_true", help="GPUを使わず参照検証のみ実行")
     commands.add_parser("results", help="保存した評価結果を一覧表示")
     show = commands.add_parser("show", help="評価結果の詳細を表示")
     show.add_argument("run_id", metavar="RUN_ID")
@@ -123,7 +137,9 @@ def main(argv: list[str] | None = None) -> int:
             from gemma_agent_dev.kaggle_bundle import prepare as build_bundle
 
             destination = artifact_directory(root, "kaggle") / args.name
-            digest = build_bundle(root, destination)
+            digest = build_bundle(
+                root, destination, verify_only=args.verify_only, eval_config=args.eval_config
+            )
             print(f"保存先：{destination}\nソースSHA-256：{digest}")
             return 0
         runs, errors = load_runs(artifact_directory(root, "results"))
@@ -134,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
             if not runs and not errors:
                 print("評価結果はまだありません。")
             if runs:
-                print("実行ID\t状態\t段階\t予定\t完了\t解決\t解決率\t所要時間（秒）")
+                print("実行ID\t状態\t段階\t予定\t完了\t解決\t解決率\t所要時間（秒）\t種別")
             for run in runs:
                 rate = run.resolution_rate
                 print(
@@ -145,10 +161,11 @@ def main(argv: list[str] | None = None) -> int:
                             run_status(run),
                             run.manifest.get("phase", "—"),
                             len(run.task_ids),
-                            len(run.rows),
-                            run.resolved,
+                            run.completed_count,
+                            run.resolved if run.kind == "evaluation" else "—",
                             f"{rate:.1%}" if rate is not None else "—",
                             run.manifest.get("timings", {}).get("total_seconds", "—"),
+                            "参照検証" if run.kind == "verification" else "エージェント評価",
                         )
                     )
                 )
@@ -166,7 +183,8 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     print(read_artifact(run, relative))
                 else:
-                    print(json.dumps(run.rows.get(args.task), ensure_ascii=False, indent=2))
+                    records = run.controls if run.kind == "verification" else run.rows
+                    print(json.dumps(records.get(args.task), ensure_ascii=False, indent=2))
             else:
                 print(f"状態：{run_status(run)}\n実行条件と記録：")
                 print(json.dumps(run.manifest, ensure_ascii=False, indent=2))
@@ -174,10 +192,19 @@ def main(argv: list[str] | None = None) -> int:
             left, right = find_run(runs, args.left), find_run(runs, args.right)
             invalid = report_problems(left) or invalid
             invalid = report_problems(right) or invalid
+            if left.kind != "evaluation" or right.kind != "evaluation":
+                raise ValueError("参照検証はエージェント評価と比較できません。")
             differences = comparison_differences(left, right)
             if differences:
-                print("比較条件が異なるか、結果が未完了です。")
+                print("比較条件に差があります。")
                 for field in differences:
+                    a, b = condition(left, field), condition(right, field)
+                    if field == "submission_files" and isinstance(a, dict) and isinstance(b, dict):
+                        changed = sorted(
+                            name for name in a.keys() | b.keys() if a.get(name) != b.get(name)
+                        )
+                        print(f"{CONDITION_LABELS[field]}：" + "、".join(changed))
+                        continue
                     print(
                         f"{CONDITION_LABELS[field]}："
                         + json.dumps(

@@ -132,3 +132,74 @@ def test_prepare_rejects_output_symlink(project: Path, tmp_path: Path) -> None:
     (project / "artifacts/kaggle").symlink_to(outside, target_is_directory=True)
     assert main(["prepare-kaggle", "--name", "baseline"]) == 1
     assert not list(outside.iterdir())
+
+
+def test_failed_run_is_displayed_without_a_read_error(
+    project: Path, make_run: Callable[..., Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = import_run(project, make_run(status="failed", completed=0))
+    (path / "task_results.jsonl").unlink()
+    (path / "summary.json").unlink()
+    assert main(["results"]) == 0
+    output = capsys.readouterr()
+    assert "失敗" in output.out and not output.err
+
+
+def test_prepare_accepts_selected_evaluation_configuration(project: Path) -> None:
+    source = Path(__file__).resolve().parents[1]
+    for directory in ("src", "agent", "configs", "kaggle"):
+        shutil.copytree(source / directory, project / directory, dirs_exist_ok=True)
+    assert (
+        main(
+            [
+                "prepare-kaggle",
+                "--name",
+                "five",
+                "--verify-only",
+                "--eval-config",
+                "configs/evaluation/5min.yaml",
+            ]
+        )
+        == 0
+    )
+    manifest = json.loads((project / "artifacts/kaggle/five/source-manifest.json").read_text())
+    assert manifest["evaluation_config"]["values"]["max_time_minutes"] == 5
+
+
+@pytest.mark.parametrize("content", [None, "evaluation: [", "evaluation: {}"])
+def test_prepare_rejects_missing_or_invalid_configuration(
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+    content: str | None,
+) -> None:
+    if content is not None:
+        (project / "selected.yaml").write_text(content)
+    assert (
+        main(
+            [
+                "prepare-kaggle",
+                "--name",
+                "invalid",
+                "--eval-config",
+                "selected.yaml",
+            ]
+        )
+        == 1
+    )
+    assert capsys.readouterr().err
+    assert not (project / "artifacts").exists()
+
+
+def test_comparison_reports_a_changed_agent_even_with_equal_budgets(
+    project: Path, make_run: Callable[..., Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    import_run(project, make_run())
+    other = import_run(project, make_run("run-b"))
+    manifest = json.loads((other / "manifest.json").read_text())
+    manifest["submission_files"]["prompts/system.md"] = "changed"
+    (other / "manifest.json").write_text(json.dumps(manifest))
+    assert main(["compare", "run-a", "run-b"]) == 0
+    output = capsys.readouterr().out
+    assert "エージェント・提出ファイル" in output and "prompts/system.md" in output
+    assert "agent.yaml" not in output
+    assert "同じ課題と実行条件" not in output

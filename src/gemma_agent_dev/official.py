@@ -1,23 +1,48 @@
-"""Validate submissions using the installed competition compiler and registries."""
+"""Connect submissions to the current official compiler and inference registry."""
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 
-def make_validator(config: Any) -> Callable[[Path], None]:
+def expected_model(runtime: dict[str, Any]) -> str:
+    name = str(runtime["model_source"]).split("/")[-2]
+    if Path(runtime["paths"]["model"]).parent.name != name:
+        raise ValueError("Model source and mounted model path disagree")
+    return name
+
+
+def validate_model(directory: Path, expected: str) -> None:
+    from adk_submission import discover_declared_models
+
+    declared = discover_declared_models(directory)
+    if declared != {expected}:
+        raise ValueError(f"Expected model {expected!r}, found {sorted(declared)}")
+
+
+def create_server(directory: Path, runtime: dict[str, Any]) -> Any:
+    from adk_submission import VllmConfig, VllmServer, discover_adapters
+    from swegemma.config import ALLOWED_ADAPTER_EXTENSIONS
+
+    validate_model(directory, expected_model(runtime))
+    adapters = discover_adapters(directory, adapter_extensions=ALLOWED_ADAPTER_EXTENSIONS)
+    return VllmServer(
+        VllmConfig(model=runtime["paths"]["model"], **runtime["vllm"]),
+        adapter_manifest=adapters,
+    )
+
+
+def make_validator(config: Any, expected: str) -> Callable[[Path], None]:
     from adk_submission import compile_submission, discover_adapters, validate_directory
     from swegemma.config import ALLOWED_ADAPTER_EXTENSIONS
     from swegemma.context import SwegemmaContext
-    from swegemma.models.discovery import validate_single_declared_model
-    from swegemma.models.registry import resolve_swegemma_adapter
 
     context = SwegemmaContext(budget=config.budget, harness=config.harness)
 
     def validate(directory: Path) -> None:
         validate_directory(directory, limits=config.limits)
-        if validate_single_declared_model(directory) != "gemma-4-31b-it-qat-w4a16-ct":
-            raise ValueError("Submission must declare the competition model")
+        validate_model(directory, expected)
         adapters = discover_adapters(directory, adapter_extensions=ALLOWED_ADAPTER_EXTENSIONS)
         compile_submission(
             submission_dir=directory,
@@ -26,9 +51,29 @@ def make_validator(config: Any) -> Callable[[Path], None]:
             limits=config.limits,
             generation_constraints=config.generation_constraints,
             adapter_manifest=adapters,
-            adapter_resolver_fn=lambda base, info: resolve_swegemma_adapter(
-                base, info, config.models
-            ),
+            adapter_resolver_fn=lambda _base, info: config.models.get(info.name),
         )
 
     return validate
+
+
+async def evaluate(config: Any) -> Any:
+    from swegemma.evaluate import Evaluator
+
+    errors: list[str] = []
+
+    class EvaluationErrors(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            errors.append(record.getMessage())
+
+    logger = logging.getLogger("swegemma.evaluate")
+    handler = EvaluationErrors(level=logging.ERROR)
+    logger.addHandler(handler)
+    try:
+        result = await Evaluator(config).run()
+    finally:
+        logger.removeHandler(handler)
+        handler.close()
+    if errors:
+        raise RuntimeError(f"Official evaluation reported errors: {errors}")
+    return result
