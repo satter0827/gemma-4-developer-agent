@@ -20,7 +20,7 @@ CONDITION_LABELS = {
     "environment": "実行環境",
     "tasks_sha256": "課題データ",
     "verification_timeout_seconds": "パッチ検証時間",
-    "vllm_config": "推論サーバーの適用設定",
+    "vllm_config": "推論サーバー設定",
     "model_source": "モデル",
     "docker_image": "実行イメージ",
     "vllm": "推論設定",
