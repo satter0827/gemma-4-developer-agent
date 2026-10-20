@@ -40,4 +40,4 @@ Kaggle設定は指定モデル、公式Wheelhouse、実行イメージ、GPU設�
 
 開発環境は`/Users/takafumi/Developer/personal/gemma-4-developer-agent`に置きます。生成物はプロジェクト直下の`artifacts/`へ集約し、ソース・設定・文書と分けます。MakefileとCIは同じ保存先の設定を使います。
 
-Kaggleでは`/kaggle/working/artifacts/results/実行ID/`に結果を保存し、この実行フォルダーを公式ライブラリの作業ディレクトリにします。ソース展開と一時ファイルは`artifacts/tmp/`、Pythonのキャッシュは`artifacts/cache/`に置きます。
+Kaggleでは`/kaggle/working/artifacts/results/実行ID/`に結果を保存し、この実行フォルダーを公式ライブラリの作業ディレクトリにします。ソース展開と一時ファイルは`artifacts/tmp/`、KaggleのPythonバイトコード生成は親・子プロセスとも無効にし、出力一覧へ不要なキャッシュを含めません。ローカルのキャッシュは`artifacts/cache/`に置きます。

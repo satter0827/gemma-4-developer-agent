@@ -15,6 +15,7 @@ from gemma_agent_dev.config import EvaluationSettings
 def prepare(root: Path, destination: Path, *, verify_only: bool = False) -> str:
     EvaluationSettings.load(root / "agent/eval_config.yaml")
     config = json.loads((root / "configs/runtime.json").read_text())
+    kernel_id = config["verification_kernel_id"] if verify_only else config["kernel_id"]
     if destination.exists():
         raise FileExistsError(destination)
     files = sorted(
@@ -62,10 +63,8 @@ def prepare(root: Path, destination: Path, *, verify_only: bool = False) -> str:
     write_json(
         destination / "kernel-metadata.json",
         {
-            "id": config["verification_kernel_id"] if verify_only else config["kernel_id"],
-            "title": "Gemma 4 Developer Agent Verification"
-            if verify_only
-            else "Gemma 4 Developer Agent Baseline",
+            "id": kernel_id,
+            "title": kernel_id.split("/")[-1].replace("-", " ").title(),
             "code_file": "run.py",
             "language": "python",
             "kernel_type": "script",

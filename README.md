@@ -21,8 +21,8 @@ make check
 ```sh
 make cli ARGS='prepare-kaggle --name verify-20261020 --verify-only'
 kaggle kernels push -p artifacts/kaggle/verify-20261020
-kaggle kernels status satter0927/gemma-4-developer-agent-verify
-kaggle kernels logs satter0927/gemma-4-developer-agent-verify
+kaggle kernels status satter0927/gemma-4-developer-agent-verification
+kaggle kernels logs satter0927/gemma-4-developer-agent-verification
 ```
 
 `fastapi_15661`・`fastapi_15588`の両方で、修正前が未解決、参照パッチ適用後が解決になることを確認します。通過後、同じソースでGPU評価を実行します。

@@ -38,6 +38,8 @@ def test_verification_bundle_shares_sources_without_gpu_inputs(tmp_path: Path) -
     cpu = json.loads((verification / "kernel-metadata.json").read_text())
     gpu = json.loads((evaluation / "kernel-metadata.json").read_text())
     assert cpu["id"] != gpu["id"]
+    for metadata in (cpu, gpu):
+        assert metadata["title"].lower().replace(" ", "-") == metadata["id"].split("/")[-1]
     assert cpu["is_private"] and not cpu["enable_gpu"] and not cpu["enable_internet"]
     assert not cpu["model_sources"] and "machine_shape" not in cpu
     assert gpu["enable_gpu"] and gpu["model_sources"]

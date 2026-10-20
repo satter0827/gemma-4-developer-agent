@@ -48,5 +48,5 @@
     "token_threshold": 14336,
     "event_retention_size": 5
   },
-  "verification_kernel_id": "satter0927/gemma-4-developer-agent-verify"
+  "verification_kernel_id": "satter0927/gemma-4-developer-agent-verification"
 }

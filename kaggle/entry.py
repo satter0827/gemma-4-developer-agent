@@ -19,6 +19,8 @@ def main(source_b64: str, provenance: dict[str, Any], *, verify_only: bool = Fal
     temporary = ARTIFACTS_ROOT / "tmp"
     temporary.mkdir(parents=True, exist_ok=True)
     os.environ["TMPDIR"] = str(temporary)
+    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+    sys.dont_write_bytecode = True
     tempfile.tempdir = str(temporary)
     sys.pycache_prefix = str(ARTIFACTS_ROOT / "cache/python")
     with tempfile.TemporaryDirectory(prefix="gemma-source-", dir=temporary) as directory:
