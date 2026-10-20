@@ -13,7 +13,8 @@
     "data": "/kaggle/input/competitions/gemma-4-developer-agent",
     "model": "/kaggle/input/models/google/gemma-4/other/gemma-4-31b-it-qat-w4a16-ct/2",
     "wheelhouse": "/kaggle/input/datasets/metric/gemma-4-developer-agent-wheelhouse",
-    "output": "/kaggle/working/artifacts/results"
+    "output": "/kaggle/working/artifacts/results",
+    "submission_export": "/kaggle/working/submission.zip"
   },
   "packages": {
     "swegemma": "0.2.11",
@@ -48,5 +49,6 @@
     "token_threshold": 14336,
     "event_retention_size": 5
   },
-  "verification_kernel_id": "satter0927/gemma-4-developer-agent-verification"
+  "verification_kernel_id": "satter0927/gemma-4-developer-agent-verification",
+  "concurrency": 1
 }

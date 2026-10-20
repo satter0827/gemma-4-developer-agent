@@ -64,7 +64,7 @@ def test_comparison_checks_tasks_and_conditions(make_run: Callable[..., Path]) -
 def test_artifacts_cannot_escape_result_directory(make_run: Callable[..., Path]) -> None:
     run = load_run(make_run())
     with pytest.raises(ValueError, match="escapes"):
-        read_artifact(run, "../secret.txt")
+        read_artifact(run, "../secret.txt", 100)
 
 
 def test_pre_evaluation_failure_is_readable_without_official_results(

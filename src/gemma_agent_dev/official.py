@@ -1,9 +1,12 @@
 """Connect submissions to the current official compiler and inference registry."""
 
 import logging
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+from gemma_agent_dev.artifacts import write_json
 
 
 def expected_model(runtime: dict[str, Any]) -> str:
@@ -77,3 +80,60 @@ async def evaluate(config: Any) -> Any:
     if errors:
         raise RuntimeError(f"Official evaluation reported errors: {errors}")
     return result
+
+
+def select_tasks(tasks: list[Any], ids: list[str]) -> list[Any]:
+    selected_ids = [task.instance_id for task in tasks if task.instance_id in ids]
+    if len(selected_ids) != len(set(selected_ids)):
+        raise ValueError("Duplicate selected task data")
+    available = {task.instance_id: task for task in tasks}
+    if not ids or len(ids) != len(set(ids)) or not set(ids) <= set(available):
+        raise ValueError("Unknown, empty, or duplicate task IDs")
+    selected = [available[task_id] for task_id in ids]
+    if any(not task.patch.strip() or not task.test_patch.strip() for task in selected):
+        raise ValueError("Every selected task must have reference and test patches")
+    return selected
+
+
+async def verify_controls(config: Any, tasks: list[Any], output: Path) -> bool:
+    from swegemma.deduplication import resolve_task_snapshot_paths
+    from swegemma.evaluate import Evaluator
+    from swegemma.harness.verification import verify_task
+
+    evaluator = Evaluator(config)
+    selected = select_tasks(tasks, config.task_ids)
+    records = []
+    for task in selected:
+        snapshot, base, patch = resolve_task_snapshot_paths(
+            config.snapshots_dir,
+            task.instance_id,
+            task.repo,
+        )
+        outcomes = {}
+        for label, solution in (("unmodified", ""), ("reference", task.patch)):
+            result = await verify_task(
+                evaluator.sandbox,
+                config,
+                task,
+                snapshot,
+                base_snapshot_path=base,
+                patch_path=patch,
+                agent_patch=solution,
+                start_time=time.perf_counter(),
+            )
+            (output / f"control-{task.instance_id}-{label}.log").write_text(
+                result.test_output,
+                encoding="utf-8",
+            )
+            outcomes[label] = {
+                "resolved": result.resolved,
+                "exit_code": result.test_exit_code,
+                "error": result.error,
+                "duration_seconds": result.duration_seconds,
+            }
+        records.append({"instance_id": task.instance_id, "repo": task.repo, **outcomes})
+        write_json(output / "controls.json", records)
+    return bool(records) and all(
+        not record["unmodified"]["resolved"] and record["reference"]["resolved"]
+        for record in records
+    )

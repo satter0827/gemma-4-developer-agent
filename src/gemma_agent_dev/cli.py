@@ -3,9 +3,11 @@
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
+from gemma_agent_dev.preflight import artifact_limit
 from gemma_agent_dev.results import Run, comparison_differences, load_run, read_artifact
 
 ARTIFACT_TYPES = {
@@ -114,8 +116,17 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     prepare = commands.add_parser("prepare-kaggle", help="Private用の提出準備コードを生成")
     prepare.add_argument("--name", required=True, help="生成先の名前")
-    prepare.add_argument("--eval-config", type=Path, help="プロジェクト内の評価設定ファイル")
+    prepare.add_argument("--preflight-report", type=Path, help="完了したローカル事前検証の記録")
     prepare.add_argument("--verify-only", action="store_true", help="GPUを使わず参照検証のみ実行")
+    prepare.add_argument("--diagnostics-config", type=Path, help="CPU診断に使用する設定ファイル")
+    preflight = commands.add_parser("preflight", help="ローカル検証と提出候補の固定")
+    preflight.add_argument("--config", type=Path, required=True)
+    for name, help_text in (
+        ("prepare-diagnostics", "ローカル診断の入力とPython環境を準備"),
+        ("diagnose", "準備済み環境でパッチを診断"),
+    ):
+        diagnostic = commands.add_parser(name, help=help_text)
+        diagnostic.add_argument("--config", type=Path, required=True, help="診断設定ファイル")
     commands.add_parser("results", help="保存した評価結果を一覧表示")
     show = commands.add_parser("show", help="評価結果の詳細を表示")
     show.add_argument("run_id", metavar="RUN_ID")
@@ -133,12 +144,40 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--nameには英数字・ハイフン・アンダースコアを使用してください。")
     try:
         root = project_root()
+        if args.command == "preflight":
+            from gemma_agent_dev.preflight import run as run_preflight
+
+            print(f"検証記録：{run_preflight(root, args.config)}")
+            return 0
+        if args.command in {"prepare-diagnostics", "diagnose"}:
+            from gemma_agent_dev.diagnostic_config import DiagnosticSettings
+            from gemma_agent_dev.diagnostics import diagnose
+            from gemma_agent_dev.diagnostics import prepare as prepare_diagnostics
+
+            settings = DiagnosticSettings.load(root, args.config)
+            output = (
+                prepare_diagnostics(settings)
+                if args.command == "prepare-diagnostics"
+                else diagnose(settings)
+            )
+            print(f"保存先：{output}")
+            return 0
         if args.command == "prepare-kaggle":
             from gemma_agent_dev.kaggle_bundle import prepare as build_bundle
 
             destination = artifact_directory(root, "kaggle") / args.name
+            if args.diagnostics_config:
+                if args.verify_only or args.preflight_report:
+                    parser.error("--diagnostics-configは他の評価設定と併用できません。")
+                from gemma_agent_dev.diagnostic_bundle import prepare as build_diagnostics
+
+                digest = build_diagnostics(root, destination, args.diagnostics_config)
+                print(f"保存先：{destination}\nソースSHA-256：{digest}")
+                return 0
+            if args.preflight_report is None:
+                raise ValueError("--preflight-reportを指定してください。")
             digest = build_bundle(
-                root, destination, verify_only=args.verify_only, eval_config=args.eval_config
+                root, destination, report_path=args.preflight_report, verify_only=args.verify_only
             )
             print(f"保存先：{destination}\nソースSHA-256：{digest}")
             return 0
@@ -181,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
                     relative = ARTIFACT_TYPES[args.artifact].format(
                         task=args.task.replace("/", "__")
                     )
-                    print(read_artifact(run, relative))
+                    print(read_artifact(run, relative, artifact_limit(root)))
                 else:
                     records = run.controls if run.kind == "verification" else run.rows
                     print(json.dumps(records.get(args.task), ensure_ascii=False, indent=2))
@@ -232,6 +271,13 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 )
         return int(invalid)
-    except (OSError, ValueError, TypeError) as error:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        RuntimeError,
+        KeyError,
+        subprocess.SubprocessError,
+    ) as error:
         print(f"処理できません：{error}", file=sys.stderr)
         return 1

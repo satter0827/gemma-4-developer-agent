@@ -2,8 +2,20 @@
 
 import hashlib
 import json
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+RUN_ID_RANDOM_HEX_LENGTH = 8
+
+
+def new_run_id() -> str:
+    return (
+        datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        + "-"
+        + uuid.uuid4().hex[:RUN_ID_RANDOM_HEX_LENGTH]
+    )
 
 
 def file_hash(path: Path) -> str:

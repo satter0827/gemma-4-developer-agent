@@ -6,3 +6,4 @@ kaggle.json
 *.safetensors
 *.whl
 *.zip
+__pycache__/

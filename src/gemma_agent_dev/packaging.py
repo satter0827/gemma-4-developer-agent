@@ -11,7 +11,9 @@ from gemma_agent_dev.artifacts import file_hash, inventory, write_json
 def package_submission(
     source: Path,
     destination: Path,
-    validate: Callable[[Path], None],
+    validate: Callable[[Path], object],
+    *,
+    validation_scope: str,
 ) -> dict[str, str]:
     if destination.resolve().is_relative_to(source.resolve()):
         raise ValueError("Archive must be outside the submission directory")
@@ -42,7 +44,7 @@ def package_submission(
         {
             "files": before,
             "archive_sha256": file_hash(destination),
-            "validated": True,
+            "validation_scope": validation_scope,
         },
     )
     return before

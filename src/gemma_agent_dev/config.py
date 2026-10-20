@@ -1,10 +1,174 @@
 """Load the evaluation contract without implicit CLI defaults."""
 
-from dataclasses import asdict, dataclass
+import json
+import math
+import re
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+MODEL_SOURCE_PARTS = 5
+MAX_TCP_PORT = 65535
+
+
+def mapping(value: Any, names: set[str], label: str) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != names:
+        raise ValueError(f"Invalid {label} keys; expected {sorted(names)}")
+    return value
+
+
+def positive(value: Any, label: str, *, integer: bool = False) -> None:
+    if (
+        type(value) not in ((int,) if integer else (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        raise ValueError(f"Invalid positive value: {label}")
+
+
+def project_path(root: Path, value: Any) -> Path:
+    if not isinstance(value, str) or not value:
+        raise ValueError("Expected a nonempty project path")
+    path = root / value
+    if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):
+        raise ValueError(f"Path must stay inside the project: {value}")
+    return path.resolve()
+
+
+@dataclass(frozen=True)
+class RuntimePaths:
+    data: str
+    model: str
+    wheelhouse: str
+    output: str
+    submission_export: str
+
+
+@dataclass(frozen=True)
+class InferenceSettings:
+    port: int
+    host: str
+    tool_call_parser: str
+    reasoning_parser: str
+    max_model_len: int
+    dtype: str
+    gpu_memory_utilization: float
+    enable_auto_tool_choice: bool
+    enable_lora: bool
+    max_loras: int
+    max_lora_rank: int
+    tensor_parallel_size: int
+    startup_timeout: int
+    scheduler_reserve_full_isl: bool
+
+
+@dataclass(frozen=True)
+class CacheSettings:
+    min_tokens: int
+    ttl_seconds: int
+    cache_intervals: int
+
+
+@dataclass(frozen=True)
+class CompactionSettings:
+    compaction_interval: int
+    overlap_size: int
+    token_threshold: int
+    event_retention_size: int
+
+
+@dataclass(frozen=True)
+class RuntimeSettings:
+    competition: str
+    kernel_id: str
+    verification_kernel_id: str
+    model_source: str
+    wheelhouse_source: str
+    docker_image: str
+    machine_shape: str
+    task_ids: list[str]
+    paths: RuntimePaths
+    packages: dict[str, str]
+    verification_timeout_seconds: int
+    concurrency: int
+    vllm: InferenceSettings
+    context_cache: CacheSettings
+    compaction: CompactionSettings
+
+    @classmethod
+    def load(cls, path: Path) -> "RuntimeSettings":
+        value = mapping(json.loads(path.read_text()), {f.name for f in fields(cls)}, "runtime")
+        for name in ("competition", "model_source", "docker_image", "machine_shape"):
+            if not isinstance(value[name], str) or not value[name].strip():
+                raise ValueError(f"Invalid runtime string: {name}")
+        for name in ("kernel_id", "verification_kernel_id", "wheelhouse_source"):
+            if not isinstance(value[name], str) or not re.fullmatch(r"[\w-]+/[\w-]+", value[name]):
+                raise ValueError(f"Invalid Kaggle resource: {name}")
+        if value["kernel_id"] == value["verification_kernel_id"]:
+            raise ValueError("Verification and GPU evaluation require separate notebooks")
+        ids = value["task_ids"]
+        if (
+            not isinstance(ids, list)
+            or not ids
+            or any(not isinstance(i, str) or not re.fullmatch(r"[\w-]+", i) for i in ids)
+            or len(ids) != len(set(ids))
+        ):
+            raise ValueError("Invalid or duplicate task IDs")
+        packages = value["packages"]
+        if (
+            not isinstance(packages, dict)
+            or not packages
+            or any(
+                not isinstance(k, str)
+                or not isinstance(v, str)
+                or not re.fullmatch(r"\d+(?:\.\d+)+(?:[\w.]+)?", v)
+                for k, v in packages.items()
+            )
+        ):
+            raise ValueError("Expected pinned official package versions")
+        positive(value["concurrency"], "concurrency", integer=True)
+        positive(value["verification_timeout_seconds"], "verification timeout", integer=True)
+        nested: dict[str, Any] = {}
+        for name, kind in (
+            ("paths", RuntimePaths),
+            ("vllm", InferenceSettings),
+            ("context_cache", CacheSettings),
+            ("compaction", CompactionSettings),
+        ):
+            data = mapping(value[name], {f.name for f in fields(kind)}, name)
+            for f in fields(kind):
+                item = data[f.name]
+                if f.type is bool:
+                    if type(item) is not bool:
+                        raise ValueError(f"Expected boolean: {name}.{f.name}")
+                elif f.type is str:
+                    if not isinstance(item, str) or not item:
+                        raise ValueError(f"Expected string: {name}.{f.name}")
+                else:
+                    positive(item, f"{name}.{f.name}", integer=f.type is int)
+            nested[name] = kind(**data)
+        paths = nested["paths"]
+        if any(not Path(p).is_absolute() for p in asdict(paths).values()):
+            raise ValueError("Runtime paths must be absolute")
+        source = value["model_source"].split("/")
+        if (
+            len(source) != MODEL_SOURCE_PARTS
+            or any(not re.fullmatch(r"[\w.-]+", part) for part in source)
+            or not source[-1].isdigit()
+            or int(source[-1]) < 1
+            or tuple(Path(paths.model).parts[-5:])
+            != (source[0], source[1], source[2].lower(), source[3], source[4])
+        ):
+            raise ValueError("Model source and mounted model path disagree")
+        inference = nested["vllm"]
+        if inference.port > MAX_TCP_PORT or inference.gpu_memory_utilization > 1:
+            raise ValueError("Invalid inference port or memory utilization")
+        return cls(**{**value, **nested})
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass(frozen=True)
