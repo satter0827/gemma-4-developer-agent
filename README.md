@@ -7,12 +7,11 @@ KaggleのGemma 4 Developer Agent Competitionに向けた、提出エージェン
 Python 3.12、uv、Gitを使用します。Kaggleでの実行には、認証済みのKaggle CLIとコンペ参加が必要です。
 
 ```sh
-cd /Users/takafumi/Developer/personal/gemma-4-developer-agent
 make setup
 make check
 ```
 
-開発環境はiCloud外に置きます。Makefileを通して実行すると、仮想環境、キャッシュ、一時ファイルはすべて`artifacts/`へ保存されます。通常のwheelとしてインストールし、コード変更後は`make setup`で更新します。`make check`は更新とすべての品質チェックを実行します。
+コマンドはリポジトリのルートで実行します。開発環境はiCloud外に置きます。Makefileを通して実行すると、仮想環境、キャッシュ、一時ファイルはすべて`artifacts/`へ保存されます。通常のwheelとしてインストールし、コード変更後は`make setup`で更新します。`make check`は更新とすべての品質チェックを実行します。
 
 テストでは行カバレッジ90%以上、分岐カバレッジ80%以上をそれぞれ必須にします。行の実行だけでなく、設定の拒否や失敗時の停止も確認するための最低率です。設定は`pyproject.toml`の`tool.coverage_gate`にまとめています。
 
@@ -60,11 +59,19 @@ make cli ARGS="prepare-kaggle --name candidate-cpu --preflight-report $REPORT --
 kaggle kernels push -p artifacts/kaggle/candidate-cpu
 ```
 
-CPUの公式コンパイルと2課題の参照検証を通過後、同じ記録からGPU用コードを生成します。
+生成先の名前は毎回新しく指定します。既存フォルダーは上書きしません。CPUの公式コンパイルと2課題の参照検証を通過後、同じ記録からGPU用コードを生成します。
 
 ```sh
 make cli ARGS="prepare-kaggle --name candidate-gpu --preflight-report $REPORT"
 kaggle kernels push -p artifacts/kaggle/candidate-gpu
+kaggle kernels status satter0927/gemma-4-developer-agent-baseline
+kaggle kernels logs satter0927/gemma-4-developer-agent-baseline --follow
+```
+
+正常終了後、結果を新しい保存先へ取得します。展開した提出物や一時キャッシュを除き、正式提出用ZIPと検証記録を保存します。
+
+```sh
+kaggle kernels output satter0927/gemma-4-developer-agent-baseline -p artifacts/results/candidate-gpu --page-size 200 --file-pattern '^(submission.zip|artifacts/results/[^/]+/(?!submission/|wheel-links/).*)$'
 ```
 
 Notebookは非公開で、インターネット接続は無効です。CPUではモデル起動を行わず、GPUではKaggle側のL4を使用します。MacのGPUは使いません。GPU事前評価の対象は2課題です。課題ごとの公式判定、パッチ、ログ、トレース、集計と終了処理を確認し、解決数0件でも正常完了と性能上の失敗を区別します。
@@ -74,7 +81,7 @@ CPU・GPUのソースSHA-256、候補ZIP、依存関係、課題データ、評�
 全検証の正常終了後だけ`/kaggle/working/submission.zip`が出力されます。取得したZIPのSHA-256が検証記録と一致すること、Kaggleの参加状態と提出可能枠を確認して、同じファイルを提出します。
 
 ```sh
-kaggle competitions submit gemma-4-developer-agent -f 提出物の保存先/submission.zip -m 'Initial validated agent'
+kaggle competitions submit gemma-4-developer-agent -f artifacts/results/candidate-gpu/submission.zip -m 'Initial validated agent'
 kaggle competitions submissions gemma-4-developer-agent --format json
 ```
 
@@ -105,7 +112,7 @@ make cli ARGS='compare RUN_ID_A RUN_ID_B'
 - `tests/`、`scripts/`、`docs/`：テスト、品質チェック用スクリプト、設計、運用手順、検証状況。
 - `artifacts/`：Kaggle用コードは`kaggle/`、公式評価は`results/`、診断は`diagnostics/`、参照入力は`reference/`へ保存します。開発環境は`venv/`、課題用環境は`task-envs/`、キャッシュと一時ファイルは`cache/`と`tmp/`に置きます。すべてGit管理対象外です。
 
-追加の探索手順・上限改善と主LoRAの比較はともに0/2でした。評価基盤とCLIの動作は確認済みですが、エージェントによる課題解決は未確認です。
+初回提出候補のCPU検証とGPU事前評価は正常終了し、2課題の解決数は0/2でした。検証した同じZIPを提出ID`57441297`として正式提出しています。公開スコアは採点待ちです。詳しい条件と記録は検証状況にまとめています。
 
 詳しくは[設計](docs/design.md)、[評価と提出の手順](docs/evaluation.md)、[検証状況](docs/validation.md)を参照してください。
 
