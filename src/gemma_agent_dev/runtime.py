@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 import uuid
-from dataclasses import replace
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -66,18 +66,25 @@ def install_wheelhouse(directory: Path, output: Path) -> None:
     importlib.invalidate_caches()
 
 
+def select_tasks(tasks: list[Any], ids: list[str]) -> list[Any]:
+    available = {task.instance_id: task for task in tasks}
+    if not ids or len(ids) != len(set(ids)) or not set(ids) <= set(available):
+        raise ValueError("Unknown, empty, or duplicate task IDs")
+    selected = [available[task_id] for task_id in ids]
+    if any(not task.patch.strip() or not task.test_patch.strip() for task in selected):
+        raise ValueError("Every selected task must have reference and test patches")
+    return selected
+
+
 async def verify_controls(config: Any, tasks: list[Any], output: Path) -> bool:
     from swegemma.deduplication import resolve_task_snapshot_paths
     from swegemma.evaluate import Evaluator
     from swegemma.harness.verification import verify_task
 
     evaluator = Evaluator(config)
-    selected: dict[str, Any] = {}
-    for task in sorted(tasks, key=lambda item: item.instance_id):
-        if task.patch.strip() and task.test_patch.strip():
-            selected.setdefault(task.repo, task)
+    selected = select_tasks(tasks, config.task_ids)
     records = []
-    for task in selected.values():
+    for task in selected:
         snapshot, base, patch = resolve_task_snapshot_paths(
             config.snapshots_dir,
             task.instance_id,
@@ -107,17 +114,21 @@ async def verify_controls(config: Any, tasks: list[Any], output: Path) -> bool:
             }
         records.append({"instance_id": task.instance_id, "repo": task.repo, **outcomes})
         write_json(output / "controls.json", records)
-    return (
-        bool(records)
-        and len(selected) == len({task.repo for task in tasks})
-        and all(
-            not record["unmodified"]["resolved"] and record["reference"]["resolved"]
-            for record in records
-        )
+    return bool(records) and all(
+        not record["unmodified"]["resolved"] and record["reference"]["resolved"]
+        for record in records
     )
 
 
-def run(root: Path, provenance: dict[str, Any]) -> None:
+def validate_evaluation(output: Path, result: Any) -> None:
+    from gemma_agent_dev.results import load_run
+
+    saved = load_run(output, require_evaluation=True)
+    if saved.problems or result.total != len(saved.task_ids) or result.resolved != saved.resolved:
+        raise RuntimeError(f"Evaluation artifacts are incomplete or inconsistent: {saved.problems}")
+
+
+def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) -> None:
     config = json.loads((root / "configs/runtime.json").read_text())
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
     output = Path(config["paths"]["output"]) / run_id
@@ -125,6 +136,7 @@ def run(root: Path, provenance: dict[str, Any]) -> None:
     os.chdir(output)
     manifest: dict[str, Any] = {
         "schema_version": 1,
+        "kind": "verification" if verify_only else "evaluation",
         "run_id": run_id,
         "status": "running",
         "phase": "bootstrap",
@@ -154,17 +166,14 @@ def run(root: Path, provenance: dict[str, Any]) -> None:
             raise ValueError(f"Official package versions changed: {packages}")
         import litellm
         import torch
-        from adk_submission import VllmConfig, VllmServer, discover_adapters
         from google.adk.agents.context_cache_config import ContextCacheConfig
         from google.adk.apps._configs import EventsCompactionConfig
-        from swegemma.config import ALLOWED_ADAPTER_EXTENSIONS, EvalConfig
+        from swegemma.config import EvalConfig
         from swegemma.evaluate import Evaluator
         from swegemma.models import load_tasks
-        from swegemma.models.discovery import validate_single_declared_model
-        from swegemma.models.registry import setup_gemma_model_registry
 
         from gemma_agent_dev.config import EvaluationSettings
-        from gemma_agent_dev.official import make_validator
+        from gemma_agent_dev.official import create_server, expected_model, make_validator
         from gemma_agent_dev.packaging import package_submission
 
         phase("prepare_submission")
@@ -178,17 +187,12 @@ def run(root: Path, provenance: dict[str, Any]) -> None:
         manifest["tasks_sha256"] = file_hash(data / "tasks.jsonl")
         tasks = load_tasks(data / "tasks.jsonl")
         ids = config["task_ids"]
-        if not ids or len(ids) != len(set(ids)) or not set(ids) <= {t.instance_id for t in tasks}:
-            raise ValueError("Unknown, empty, or duplicate task IDs")
-        declared = validate_single_declared_model(submission)
-        if declared != "gemma-4-31b-it-qat-w4a16-ct":
-            raise ValueError(f"Unexpected base model: {declared}")
-        adapters = discover_adapters(submission, adapter_extensions=ALLOWED_ADAPTER_EXTENSIONS)
-        models = setup_gemma_model_registry(
-            api_base=f"http://127.0.0.1:{config['vllm']['port']}/v1",
-            api_key="EMPTY",
-            served_model=config["paths"]["model"],
-            adapter_manifest=adapters,
+        select_tasks(tasks, ids)
+        server = create_server(submission, config)
+        manifest["vllm_config"] = asdict(server.config)
+        manifest["verification_timeout_seconds"] = config["verification_timeout_seconds"]
+        models = server.create_model_registry(
+            aliases=[expected_model(config)], model_prefix="openai/", api_key="EMPTY"
         )
         evaluation = EvalConfig(
             tasks_path=data / "tasks.jsonl",
@@ -201,25 +205,30 @@ def run(root: Path, provenance: dict[str, Any]) -> None:
             task_ids=ids,
             graph_dir=str(data / "graphs"),
             embeddings_dir=str(data / "embeddings"),
-            adapter_manifest=adapters,
+            adapter_manifest=server.adapter_manifest,
             concurrency=1,
             display_mode="quiet",
+            verification_timeout_seconds=config["verification_timeout_seconds"],
             context_cache_config=ContextCacheConfig(**config["context_cache"]),
             events_compaction_config=EventsCompactionConfig(**config["compaction"]),
             **settings.as_dict(),
         )
         phase("validate_package")
-        package_submission(submission, output / "submission.zip", make_validator(evaluation))
+        package_submission(
+            submission,
+            output / "submission.zip",
+            make_validator(evaluation, expected_model(config)),
+        )
         phase("verify_controls")
         controls_start = time.perf_counter()
-        controls_config = replace(
-            evaluation,
-            timeout_seconds=config["verification_timeout_seconds"],
-        )
-        manifest["controls_passed"] = asyncio.run(verify_controls(controls_config, tasks, output))
+        manifest["controls_passed"] = asyncio.run(verify_controls(evaluation, tasks, output))
         manifest["timings"]["controls_seconds"] = time.perf_counter() - controls_start
         if not manifest["controls_passed"]:
             raise RuntimeError("Reference verification failed; inspect controls.json and logs")
+        if verify_only:
+            manifest["status"] = "completed"
+            manifest["phase"] = "finished"
+            return
         phase("start_model")
         gpu_count = torch.cuda.device_count()
         manifest["environment"]["gpus"] = [torch.cuda.get_device_name(i) for i in range(gpu_count)]
@@ -229,16 +238,7 @@ def run(root: Path, provenance: dict[str, Any]) -> None:
             )
         litellm.drop_params = True
         model_start = time.perf_counter()
-        server = VllmServer(
-            VllmConfig(model=config["paths"]["model"], **config["vllm"]),
-            adapter_manifest=adapters,
-        )
         server.start()
-        evaluation.models = server.create_model_registry(
-            aliases=[declared],
-            model_prefix="openai/",
-            api_key="EMPTY",
-        )
         manifest["timings"]["model_startup_seconds"] = time.perf_counter() - model_start
         phase("evaluate")
         evaluation_start = time.perf_counter()
@@ -246,8 +246,8 @@ def run(root: Path, provenance: dict[str, Any]) -> None:
         manifest["timings"]["evaluation_seconds"] = time.perf_counter() - evaluation_start
         if inventory(submission) != manifest["submission_files"]:
             raise ValueError("Evaluated submission changed after archive validation")
-        if result.total != len(ids):
-            raise RuntimeError("Evaluation did not return all requested tasks")
+        phase("validate_results")
+        validate_evaluation(output, result)
         manifest["status"] = "completed"
         manifest["phase"] = "finished"
     except BaseException as error:
@@ -259,4 +259,12 @@ def run(root: Path, provenance: dict[str, Any]) -> None:
         manifest["timings"]["total_seconds"] = time.perf_counter() - start
         write_json(manifest_path, manifest)
         if server is not None:
-            server.stop()
+            try:
+                server.stop()
+            except Exception as cleanup_error:
+                manifest["cleanup_error"] = str(cleanup_error)
+            log_path = Path(server.log_path)
+            if log_path.is_file():
+                shutil.copyfile(log_path, output / "vllm.log")
+                log_path.unlink()
+        write_json(manifest_path, manifest)

@@ -65,3 +65,38 @@ def test_artifacts_cannot_escape_result_directory(make_run: Callable[..., Path])
     run = load_run(make_run())
     with pytest.raises(ValueError, match="escapes"):
         read_artifact(run, "../secret.txt")
+
+
+def test_pre_evaluation_failure_is_readable_without_official_results(
+    make_run: Callable[..., Path],
+) -> None:
+    path = make_run(status="failed", completed=0)
+    (path / "task_results.jsonl").unlink()
+    (path / "summary.json").unlink()
+    result = load_run(path)
+    assert not result.problems and not result.complete and result.resolution_rate is None
+    assert load_run(path, require_evaluation=True).problems
+
+
+def test_reference_verification_has_no_agent_score(make_run: Callable[..., Path]) -> None:
+    path = make_run()
+    manifest = json.loads((path / "manifest.json").read_text())
+    manifest.update(kind="verification", controls_passed=True)
+    (path / "manifest.json").write_text(json.dumps(manifest))
+    (path / "task_results.jsonl").unlink()
+    (path / "summary.json").unlink()
+    controls = [
+        dict(
+            instance_id=task,
+            unmodified=dict(resolved=False, exit_code=1, duration_seconds=1, error=None),
+            reference=dict(resolved=True, exit_code=0, duration_seconds=1, error=None),
+        )
+        for task in manifest["task_ids"]
+    ]
+    (path / "controls.json").write_text(json.dumps(controls))
+    result = load_run(path)
+    assert result.complete and result.completed_count == 2 and result.resolution_rate is None
+    with pytest.raises(ValueError, match="not an agent"):
+        comparison_differences(result, result)
+    (path / "controls.json").write_text(json.dumps(controls + controls[:1]))
+    assert load_run(path).problems

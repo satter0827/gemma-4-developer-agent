@@ -28,3 +28,16 @@ def test_kaggle_bundle_is_private_and_contains_only_runtime_sources(tmp_path: Pa
         assert not any(name.endswith(("app.py", "cli.py", ".safetensors")) for name in names)
         assert all(name.startswith(("src/", "agent/", "configs/", "kaggle/")) for name in names)
     assert json.loads((destination / "source-manifest.json").read_text())["source_sha256"] == digest
+
+
+def test_verification_bundle_shares_sources_without_gpu_inputs(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    evaluation = tmp_path / "evaluation"
+    verification = tmp_path / "verification"
+    assert prepare(root, evaluation) == prepare(root, verification, verify_only=True)
+    cpu = json.loads((verification / "kernel-metadata.json").read_text())
+    gpu = json.loads((evaluation / "kernel-metadata.json").read_text())
+    assert cpu["id"] != gpu["id"]
+    assert cpu["is_private"] and not cpu["enable_gpu"] and not cpu["enable_internet"]
+    assert not cpu["model_sources"] and "machine_shape" not in cpu
+    assert gpu["enable_gpu"] and gpu["model_sources"]

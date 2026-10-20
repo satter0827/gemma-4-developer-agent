@@ -132,3 +132,14 @@ def test_prepare_rejects_output_symlink(project: Path, tmp_path: Path) -> None:
     (project / "artifacts/kaggle").symlink_to(outside, target_is_directory=True)
     assert main(["prepare-kaggle", "--name", "baseline"]) == 1
     assert not list(outside.iterdir())
+
+
+def test_failed_run_is_displayed_without_a_read_error(
+    project: Path, make_run: Callable[..., Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = import_run(project, make_run(status="failed", completed=0))
+    (path / "task_results.jsonl").unlink()
+    (path / "summary.json").unlink()
+    assert main(["results"]) == 0
+    output = capsys.readouterr()
+    assert "失敗" in output.out and not output.err

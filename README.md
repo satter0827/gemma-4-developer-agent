@@ -16,19 +16,29 @@ make check
 
 ## Kaggleで評価する
 
+先にGPUを使わない参照検証を実行します。
+
 ```sh
-make cli ARGS='prepare-kaggle --name baseline-02'
-kaggle kernels push -p artifacts/kaggle/baseline-02
-kaggle kernels status satter0927/gemma-4-developer-agent-baseline
-kaggle kernels logs satter0927/gemma-4-developer-agent-baseline
-kaggle kernels files satter0927/gemma-4-developer-agent-baseline
-kaggle quota
-kaggle kernels output satter0927/gemma-4-developer-agent-baseline -p artifacts/results/baseline-02
+make cli ARGS='prepare-kaggle --name verify-20261020 --verify-only'
+kaggle kernels push -p artifacts/kaggle/verify-20261020
+kaggle kernels status satter0927/gemma-4-developer-agent-verify
+kaggle kernels logs satter0927/gemma-4-developer-agent-verify
 ```
 
-生成するNotebookはPrivate、インターネット接続は無効です。初回は公式スターターと同じ2課題を評価します。評価前に、各リポジトリの修正前・正解パッチ適用後の検証を行います。前提検証に失敗した場合は推論を開始せず、原因をログに保存します。
+`fastapi_15661`・`fastapi_15588`の両方で、修正前が未解決、参照パッチ適用後が解決になることを確認します。通過後、同じソースでGPU評価を実行します。
 
-生成先の名前は毎回新しく指定してください。既存フォルダーへの上書きはできません。送信対象とソースのハッシュは`source-manifest.json`で確認できます。モデルとデータはKaggleの入力から読み込みます。
+```sh
+make cli ARGS='prepare-kaggle --name baseline-20261020'
+kaggle kernels push -p artifacts/kaggle/baseline-20261020
+kaggle kernels status satter0927/gemma-4-developer-agent-baseline
+kaggle kernels logs satter0927/gemma-4-developer-agent-baseline
+kaggle quota
+kaggle kernels output satter0927/gemma-4-developer-agent-baseline -p artifacts/results/baseline-20261020 --page-size 200 --file-pattern '^artifacts/results/[^/]+/(?!submission/|wheel-links/).*'
+```
+
+生成するNotebookはPrivate、インターネット接続は無効です。事前検証ではモデル重みを入力に付けず、推論サーバーを起動しません。GPU評価でも同じ2課題の参照検証をやり直し、通過後にモデルを起動します。HTTPX・Requestsを含む全公開課題の環境が正常になったことは保証しません。
+
+生成先の名前は毎回新しく指定してください。既存フォルダーへの上書きはできません。送信対象とソースのハッシュは`source-manifest.json`で確認できます。2種類の実行は同じソースZIPを使い、実行種別は起動時に渡します。
 
 既存実行の状態を確認してから次をアップロードします。コードの保存、実行開始、完了は別々に確認してください。Notebookの実行はコンペへの提出ではありません。
 
@@ -43,7 +53,7 @@ make cli ARGS='compare RUN_ID_A RUN_ID_B'
 
 `RUN_ID`には`results`で表示された実行IDを指定します。詳細ファイルは`patch`、`test-log`、`agent-log`、`trace`から選べます。元のログとトレースは保存時の内容で表示します。
 
-一覧には状態、最後の実行段階、予定・完了・解決件数、解決率、所要時間を表示します。未完了の解決率は表示しません。比較では課題ごとの結果と時間、実行条件の差を確認できます。正常な表示と結果未取得は終了コード0、読み込み・検証エラーは1、引数エラーは2です。
+一覧には状態、最後の実行段階、予定・完了・解決件数、解決率、所要時間、実行種別を表示します。参照検証と未完了評価の解決率は表示しません。参照検証はエージェント評価と比較できません。評価開始前に停止した実行は、未生成の評価ファイルを破損扱いせず、失敗状態を表示します。比較では課題ごとの結果と時間、実行条件の差を確認できます。正常な表示と結果未取得は終了コード0、読み込み・検証エラーは1、引数エラーは2です。
 
 ## 構成
 
