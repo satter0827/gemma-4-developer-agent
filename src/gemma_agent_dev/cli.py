@@ -195,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("参照検証はエージェント評価と比較できません。")
             differences = comparison_differences(left, right)
             if differences:
-                print("比較条件が異なるか、結果が未完了です。")
+                print("比較条件に差があります。")
                 for field in differences:
                     print(
                         f"{CONDITION_LABELS[field]}："
