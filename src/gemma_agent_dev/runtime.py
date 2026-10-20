@@ -169,11 +169,10 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
         from google.adk.agents.context_cache_config import ContextCacheConfig
         from google.adk.apps._configs import EventsCompactionConfig
         from swegemma.config import EvalConfig
-        from swegemma.evaluate import Evaluator
         from swegemma.models import load_tasks
 
         from gemma_agent_dev.config import EvaluationSettings
-        from gemma_agent_dev.official import create_server, expected_model, make_validator
+        from gemma_agent_dev.official import create_server, evaluate, expected_model, make_validator
         from gemma_agent_dev.packaging import package_submission
 
         phase("prepare_submission")
@@ -242,7 +241,7 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
         manifest["timings"]["model_startup_seconds"] = time.perf_counter() - model_start
         phase("evaluate")
         evaluation_start = time.perf_counter()
-        result = asyncio.run(Evaluator(evaluation).run())
+        result = asyncio.run(evaluate(evaluation))
         manifest["timings"]["evaluation_seconds"] = time.perf_counter() - evaluation_start
         if inventory(submission) != manifest["submission_files"]:
             raise ValueError("Evaluated submission changed after archive validation")

@@ -1,5 +1,6 @@
 import importlib.metadata
 import json
+import logging
 import shutil
 import sys
 import types
@@ -32,9 +33,16 @@ class ServerConfig:
     model: str = "fixture"
 
 
-@pytest.mark.parametrize("verify_only,save_results", [(True, False), (False, True), (False, False)])
+@pytest.mark.parametrize(
+    "verify_only,save_results,logged_error",
+    [(True, False, False), (False, True, False), (False, False, False), (False, True, True)],
+)
 def test_pipeline_verifies_before_model_start_and_validates_saved_results(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, verify_only: bool, save_results: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    verify_only: bool,
+    save_results: bool,
+    logged_error: bool,
 ) -> None:
     root = tmp_path / "project"
     (root / "configs").mkdir(parents=True)
@@ -92,6 +100,10 @@ def test_pipeline_verifies_before_model_start_and_validates_saved_results(
                 (self.config.results_dir / "summary.json").write_text(
                     json.dumps(dict(total_tasks=2, resolved=1))
                 )
+            if logged_error:
+                logging.getLogger("swegemma.evaluate").error(
+                    "Failed to save final evaluation results: disk failure"
+                )
             return SimpleNamespace(total=2, resolved=1)
 
     async def verify(_sandbox: Any, _config: Any, task: Any, *_: Any, **kwargs: Any) -> Any:
@@ -147,14 +159,17 @@ def test_pipeline_verifies_before_model_start_and_validates_saved_results(
     module("swegemma.harness.verification", verify_task=verify)
     monkeypatch.setattr(official, "create_server", lambda *_: Server())
     monkeypatch.setattr(official, "make_validator", lambda *_: lambda _: None)
-    if not verify_only and not save_results:
-        with pytest.raises(RuntimeError, match="artifacts"):
+    handlers = list(logging.getLogger("swegemma.evaluate").handlers)
+    failed = not verify_only and (not save_results or logged_error)
+    if failed:
+        with pytest.raises(RuntimeError, match="reported errors" if logged_error else "artifacts"):
             runtime.run(root, {"source_sha256": "fixture"}, verify_only=verify_only)
     else:
         runtime.run(root, {"source_sha256": "fixture"}, verify_only=verify_only)
+    assert logging.getLogger("swegemma.evaluate").handlers == handlers
     output = next((tmp_path / "results").iterdir())
     manifest = json.loads((output / "manifest.json").read_text())
-    assert manifest["status"] == ("completed" if verify_only or save_results else "failed")
+    assert manifest["status"] == ("failed" if failed else "completed")
     assert configurations[0].timeout_seconds == 60
     assert configurations[0].verification_timeout_seconds == 300
     assert calls.count("start") == int(not verify_only)

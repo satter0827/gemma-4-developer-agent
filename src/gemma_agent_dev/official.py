@@ -1,5 +1,6 @@
 """Connect submissions to the current official compiler and inference registry."""
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -54,3 +55,25 @@ def make_validator(config: Any, expected: str) -> Callable[[Path], None]:
         )
 
     return validate
+
+
+async def evaluate(config: Any) -> Any:
+    from swegemma.evaluate import Evaluator
+
+    errors: list[str] = []
+
+    class EvaluationErrors(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            errors.append(record.getMessage())
+
+    logger = logging.getLogger("swegemma.evaluate")
+    handler = EvaluationErrors(level=logging.ERROR)
+    logger.addHandler(handler)
+    try:
+        result = await Evaluator(config).run()
+    finally:
+        logger.removeHandler(handler)
+        handler.close()
+    if errors:
+        raise RuntimeError(f"Official evaluation reported errors: {errors}")
+    return result

@@ -22,7 +22,7 @@ make check
 make cli ARGS='prepare-kaggle --name verify-20261020 --verify-only'
 kaggle kernels push -p artifacts/kaggle/verify-20261020
 kaggle kernels status satter0927/gemma-4-developer-agent-verification
-kaggle kernels logs satter0927/gemma-4-developer-agent-verification
+kaggle kernels logs satter0927/gemma-4-developer-agent-verification --follow
 ```
 
 `fastapi_15661`・`fastapi_15588`の両方で、修正前が未解決、参照パッチ適用後が解決になることを確認します。通過後、同じソースでGPU評価を実行します。
@@ -31,7 +31,7 @@ kaggle kernels logs satter0927/gemma-4-developer-agent-verification
 make cli ARGS='prepare-kaggle --name baseline-20261020'
 kaggle kernels push -p artifacts/kaggle/baseline-20261020
 kaggle kernels status satter0927/gemma-4-developer-agent-baseline
-kaggle kernels logs satter0927/gemma-4-developer-agent-baseline
+kaggle kernels logs satter0927/gemma-4-developer-agent-baseline --follow
 kaggle quota
 kaggle kernels output satter0927/gemma-4-developer-agent-baseline -p artifacts/results/baseline-20261020 --page-size 200 --file-pattern '^artifacts/results/[^/]+/(?!submission/|wheel-links/).*'
 ```

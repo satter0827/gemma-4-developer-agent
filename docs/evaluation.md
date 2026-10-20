@@ -31,7 +31,7 @@ Kaggleの開発実行はsubprocess方式です。本番のDocker隔離環境と�
 
 ## 実行状況の確認
 
-公式CLIの`kernels status`、`kernels logs`、`kernels files`、`quota`を使用します。コードの保存版とハッシュを確認したうえで、状態表示、ログ、生成ファイル、GPU枠を照合します。空のログやGPU使用量だけから待機原因を決めません。
+公式CLIの`kernels status`、`kernels logs --follow`、`kernels files`、`quota`を使用します。実行中のログは`--follow`で取得します。既定の`kernels logs`は保存済みログを返すため、実行中は空の場合があります。コードの保存版とハッシュを確認したうえで、状態表示、ログ、生成ファイル、GPU枠を照合します。空のログやGPU使用量だけから待機原因を決めません。
 
 公式SDKではQUEUEDが状態の既定値で、JSONでは既定値が省略されます。空の応答を理由にSDKの不具合と判定しません。実行開始後は、ログとmanifestの`phase`で依存関係の準備、提出物の検証、参照パッチの検証、モデル起動、評価のどこまで進んだかを確認します。
 
