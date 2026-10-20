@@ -530,6 +530,7 @@ def test_official_diagnostics_validate_evidence_and_stop_on_reference_failure(
                 "patch": patch,
                 "patch_sha256": hashlib.sha256(patch.encode()).hexdigest(),
                 "expected_pass": name in {"reference", "probe"},
+                "expected_outcome": "passed" if name in {"reference", "probe"} else "failed",
             }
             for name, patch in patches.items()
         ],
@@ -614,3 +615,78 @@ def test_generated_patch_can_be_replayed_without_probe(
     selected = DiagnosticSettings.load(settings.root, settings.config_path)
     patches = selected.tasks[0].patches(selected.read_tasks()["fixture_1"])
     assert list(patches) == ["reference", "unmodified", "generated"]
+
+
+@pytest.mark.parametrize("exit_code", [2, 2.0, True])
+def test_collection_failure_is_not_a_normal_test_result(tmp_path: Path, exit_code: Any) -> None:
+    path = tmp_path / "junit.xml"
+    path.write_text(
+        '<testsuite><testcase name="tests.module">'
+        '<error message="collection failure">ImportError</error></testcase></testsuite>'
+    )
+    with pytest.raises(ValueError):
+        validate_test_evidence(exit_code, path)
+    with pytest.raises(ValueError):
+        junit_counts(path)
+
+
+def test_only_explicit_collection_diagnostics_allow_zero_executed_tests(tmp_path: Path) -> None:
+    from gemma_agent_dev.diagnostic_results import diagnostic_evidence
+
+    path = tmp_path / "junit.xml"
+    path.write_text(
+        '<testsuite><testcase name="tests.module">'
+        '<error message="collection failure">ImportError</error></testcase></testsuite>'
+    )
+    outcome, counts = diagnostic_evidence(2, path, "collection_error")
+    assert (
+        outcome == "collection_error" and counts["tests"] == 0 and counts["collection_errors"] == 1
+    )
+    with pytest.raises(ValueError):
+        diagnostic_evidence(2, path, "failed")
+    with pytest.raises(ValueError):
+        diagnostic_evidence(2.0, path, "collection_error")  # type: ignore[arg-type]
+    path.write_text('<testsuite><testcase name="actual_test"/></testsuite>')
+    with pytest.raises(ValueError, match="Interrupted"):
+        diagnostic_evidence(2, path, "collection_error")
+
+
+@pytest.mark.parametrize(
+    "names", [["reference"], ["unknown"], ["probe"], ["generated", "generated"], None]
+)
+def test_collection_expectations_are_validated(
+    diagnostic_project: DiagnosticSettings, names: Any
+) -> None:
+    data = yaml.safe_load(diagnostic_project.config_path.read_text())
+    data["tasks"][0]["collection_error_cases"] = names
+    diagnostic_project.config_path.write_text(yaml.safe_dump(data))
+    with pytest.raises(ValueError):
+        DiagnosticSettings.load(diagnostic_project.root, diagnostic_project.config_path)
+
+
+@pytest.mark.parametrize("declared", [False, True])
+def test_real_collection_failure_requires_explicit_expectation(
+    diagnostic_project: DiagnosticSettings,
+    declared: bool,
+) -> None:
+    settings = diagnostic_project
+    task = replace(settings.tasks[0], collection_error_cases=["generated"] if declared else [])
+    patch = (
+        "--- a/calc.py\n+++ b/calc.py\n@@ -1 +1 @@\n"
+        "-value = 0\n+import nonexistent_diagnostic_module\n"
+    )
+    record = run_case(
+        settings,
+        task,
+        settings.read_tasks()[task.instance_id],
+        "generated",
+        patch,
+        settings.output_dir / "collection",
+    )
+    assert record["exit_code"] == 2 and record["passed"] is False
+    assert record["matched"] is declared
+    if declared:
+        assert record["outcome"] == "collection_error"
+        assert record["junit"]["tests"] == 0 and record["junit"]["collection_errors"] == 1
+    else:
+        assert "did not finish normally" in record["error"]

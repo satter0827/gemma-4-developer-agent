@@ -11,7 +11,7 @@ from typing import Any
 
 from gemma_agent_dev.artifacts import file_hash, inventory, write_json
 from gemma_agent_dev.diagnostic_config import DiagnosticSettings
-from gemma_agent_dev.diagnostic_results import validate_test_evidence
+from gemma_agent_dev.diagnostic_results import diagnostic_evidence
 
 
 def verified_spec(settings: DiagnosticSettings) -> dict[str, Any]:
@@ -44,15 +44,17 @@ def verified_spec(settings: DiagnosticSettings) -> dict[str, Any]:
                     "case": name,
                     "patch": patch,
                     "patch_sha256": hashlib.sha256(patch.encode()).hexdigest(),
-                    "expected_pass": name == "reference"
-                    or (name == "probe" and task.probe_expected_pass)
-                    or (name == "generated" and task.generated_expected_pass),
+                    "expected_pass": task.expected_outcome(name) == "passed",
+                    "expected_outcome": task.expected_outcome(name),
                 }
             )
     if any(not r["matched"] for r in local["cases"]):
         raise ValueError("Local diagnostics contain failed cases")
     for saved, case in zip(local["cases"], cases, strict=True):
-        if any(saved[k] != case[k] for k in ("task_id", "case", "patch_sha256", "expected_pass")):
+        if any(
+            saved[k] != case[k]
+            for k in ("task_id", "case", "patch_sha256", "expected_pass", "expected_outcome")
+        ):
             raise ValueError("Local diagnostic cases differ from configured inputs")
         directory = local_report.parent / case["task_id"] / case["case"]
         files = inventory(directory)
@@ -62,8 +64,14 @@ def verified_spec(settings: DiagnosticSettings) -> dict[str, Any]:
             or json.loads((directory / "case.json").read_text()) != saved
         ):
             raise ValueError("Local diagnostic artifacts are missing or changed")
-        counts = validate_test_evidence(saved["exit_code"], directory / "junit.xml")
-        if counts != saved["junit"] or saved["passed"] != case["expected_pass"]:
+        outcome, counts = diagnostic_evidence(
+            saved["exit_code"], directory / "junit.xml", case["expected_outcome"]
+        )
+        if (
+            counts != saved["junit"]
+            or saved["passed"] != case["expected_pass"]
+            or outcome != saved["outcome"]
+        ):
             raise ValueError("Local diagnostic test evidence is inconsistent")
     spec = {
         "fingerprint": settings.fingerprint(),

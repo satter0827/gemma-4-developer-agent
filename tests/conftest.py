@@ -136,6 +136,7 @@ def diagnostic_project(tmp_path: Path) -> DiagnosticSettings:
                 "probe_replacements": [{"old": "value = -1", "new": "value = 1", "count": 1}],
                 "probe_expected_pass": True,
                 "generated_expected_pass": False,
+                "collection_error_cases": [],
             }
         ],
     }

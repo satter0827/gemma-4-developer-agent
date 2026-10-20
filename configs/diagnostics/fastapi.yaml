@@ -16,6 +16,7 @@ tasks:
     test_paths: [tests/test_prepare_release.py]
     generated_patch: artifacts/results/adapter-20261020-base-gpu/artifacts/results/20261020T074844Z-156da8e1/patches/fastapi_15661.patch
     generated_sha256: 232082af6bde7472eea2030cf11c0f09bbc234a72ae14643cb8846229baf82fa
+    collection_error_cases: [unmodified, generated, probe]
     generated_expected_pass: false
     probe_expected_pass: false
     probe_replacements:
@@ -26,6 +27,7 @@ tasks:
     test_paths: [tests/test_sse.py]
     generated_patch: artifacts/results/adapter-20261020-base-gpu/artifacts/results/20261020T074844Z-156da8e1/patches/fastapi_15588.patch
     generated_sha256: 7bb3b4ff3b5444a37dc4d210c04a97324f63e598c9993632227cd98496e8f5ca
+    collection_error_cases: []
     generated_expected_pass: false
     probe_expected_pass: true
     probe_replacements:

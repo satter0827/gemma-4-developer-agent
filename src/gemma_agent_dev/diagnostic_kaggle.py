@@ -12,7 +12,7 @@ from typing import Any
 
 from gemma_agent_dev.artifacts import file_hash, inventory, write_json
 from gemma_agent_dev.config import RuntimeSettings
-from gemma_agent_dev.diagnostic_results import validate_test_evidence
+from gemma_agent_dev.diagnostic_results import diagnostic_evidence
 
 
 def run(root: Path, provenance: dict[str, Any]) -> None:
@@ -162,12 +162,13 @@ async def verify_cases(
             )
             if result.error is not None:
                 raise RuntimeError(f"Official verification failed: {result.error}")
-            record["junit"] = validate_test_evidence(
-                result.test_exit_code, destination / "junit.xml"
+            outcome, counts = diagnostic_evidence(
+                result.test_exit_code, destination / "junit.xml", case["expected_outcome"]
             )
+            record.update(outcome=outcome, junit=counts)
             if result.resolved != (result.test_exit_code == 0):
                 raise ValueError("Official decision and test exit code disagree")
-            record["matched"] = result.resolved == case["expected_pass"]
+            record["matched"] = outcome == case["expected_outcome"]
         except Exception as error:
             record["error"] = f"{type(error).__name__}: {error}"
             if not (destination / "test.log").exists():

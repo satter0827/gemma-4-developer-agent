@@ -16,7 +16,7 @@ from typing import Any
 
 from gemma_agent_dev.artifacts import file_hash, inventory, new_run_id, write_json
 from gemma_agent_dev.diagnostic_config import DiagnosticSettings, DiagnosticTask
-from gemma_agent_dev.diagnostic_results import validate_test_evidence
+from gemma_agent_dev.diagnostic_results import diagnostic_evidence
 
 
 def digest_text(value: str) -> str:
@@ -213,15 +213,12 @@ def run_case(
     output: Path,
 ) -> dict[str, Any]:
     output.mkdir(parents=True)
-    expected = (
-        name == "reference"
-        or (name == "probe" and task.probe_expected_pass)
-        or (name == "generated" and task.generated_expected_pass)
-    )
+    expected = task.expected_outcome(name)
     record: dict[str, Any] = {
         "task_id": task.instance_id,
         "case": name,
-        "expected_pass": expected,
+        "expected_pass": expected == "passed",
+        "expected_outcome": expected,
         "patch_sha256": digest_text(patch),
         "test_patch_sha256": digest_text(data["test_patch"]),
         "passed": False,
@@ -270,9 +267,15 @@ def run_case(
                         except ProcessLookupError:
                             pass
                         record["exit_code"] = process.wait()
-            record["junit"] = validate_test_evidence(record["exit_code"], output / "junit.xml")
-            passed = record["exit_code"] == 0
-            record.update(passed=passed, matched=passed == expected)
+            outcome, counts = diagnostic_evidence(
+                record["exit_code"], output / "junit.xml", expected
+            )
+            record.update(
+                junit=counts,
+                outcome=outcome,
+                passed=outcome == "passed",
+                matched=outcome == expected,
+            )
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, ET.ParseError) as error:
         record["error"] = f"{type(error).__name__}: {error}"
         if not (output / "test.log").exists():

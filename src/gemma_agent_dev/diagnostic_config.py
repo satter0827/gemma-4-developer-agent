@@ -30,6 +30,17 @@ class DiagnosticTask:
     probe_replacements: list[Replacement]
     probe_expected_pass: bool
     generated_expected_pass: bool
+    collection_error_cases: list[str]
+
+    def expected_outcome(self, name: str) -> str:
+        if name in self.collection_error_cases:
+            return "collection_error"
+        passed = (
+            name == "reference"
+            or (name == "probe" and self.probe_expected_pass)
+            or (name == "generated" and self.generated_expected_pass)
+        )
+        return "passed" if passed else "failed"
 
     def patches(self, task: dict[str, Any]) -> dict[str, str]:
         if file_hash(self.generated_patch) != self.generated_sha256:
@@ -172,6 +183,21 @@ class DiagnosticSettings:
             )
         if [t.instance_id for t in tasks] != runtime.task_ids:
             raise ValueError("Diagnostic task order must match the shared runtime task set")
+        for task in tasks:
+            collection_cases = task.collection_error_cases
+            allowed = {"unmodified", "generated"} | (
+                {"probe"} if task.probe_replacements else set()
+            )
+            if (
+                not isinstance(collection_cases, list)
+                or any(not isinstance(n, str) or n not in allowed for n in collection_cases)
+                or len(collection_cases) != len(set(collection_cases))
+            ):
+                raise ValueError("Invalid expected collection-error cases")
+            if ("generated" in collection_cases and task.generated_expected_pass) or (
+                "probe" in collection_cases and task.probe_expected_pass
+            ):
+                raise ValueError("Collection failure cannot also be expected to pass")
         settings = cls(
             **{
                 **value,
