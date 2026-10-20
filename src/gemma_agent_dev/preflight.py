@@ -23,6 +23,7 @@ from gemma_agent_dev.config import (
 )
 from gemma_agent_dev.diagnostic_config import DiagnosticSettings
 from gemma_agent_dev.packaging import package_submission
+from gemma_agent_dev.processes import process_group
 
 
 @dataclass(frozen=True)
@@ -135,15 +136,15 @@ def run(root: Path, config: Path) -> Path:
     write_json(report_path, report)
     try:
         with (output / "quality.log").open("w") as log:
-            subprocess.run(
+            with process_group(
                 ["make", "verify"],
                 cwd=settings.root,
                 env={**os.environ, "UV_OFFLINE": "1"},
                 stdout=log,
-                stderr=subprocess.STDOUT,
-                timeout=settings.quality_timeout_seconds,
-                check=True,
-            )
+            ) as process:
+                code = process.wait(timeout=settings.quality_timeout_seconds)
+                if code:
+                    raise subprocess.CalledProcessError(code, process.args)
         diagnostics = DiagnosticSettings.load(settings.root, settings.diagnostic_config)
         diagnostic_report = diagnose(diagnostics) / "report.json"
         spec = verified_spec(diagnostics)

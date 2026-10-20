@@ -1,6 +1,9 @@
 import json
+import shlex
 import shutil
 import subprocess
+import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -105,12 +108,40 @@ def test_failed_quality_does_not_create_candidate(
         assert kwargs["env"]["UV_OFFLINE"] == "1"
         raise subprocess.CalledProcessError(1, args)
 
-    monkeypatch.setattr(subprocess, "run", fail)
+    monkeypatch.setattr(preflight, "process_group", fail)
     with pytest.raises(subprocess.CalledProcessError):
         preflight.run(preflight_project, Path("preflight.yaml"))
     report = next((preflight_project / "artifacts/preflight").glob("*/report.json"))
     assert json.loads(report.read_text())["status"] == "failed"
     assert not (report.parent / "submission.zip").exists()
+
+
+def test_quality_timeout_stops_make_and_its_descendants(preflight_project: Path) -> None:
+    path = preflight_project / "preflight.yaml"
+    config = yaml.safe_load(path.read_text())
+    config["quality_timeout_seconds"] = 1
+    path.write_text(yaml.safe_dump(config))
+    marker = preflight_project / "leaked-quality-child"
+    child = f"import time; from pathlib import Path; time.sleep(2); Path({str(marker)!r}).touch()"
+    script = preflight_project / "quality.py"
+    script.write_text(
+        "import subprocess,sys,time\n"
+        f"subprocess.Popen([sys.executable, '-c', {child!r}])\n"
+        "print('quality started', flush=True)\n"
+        "time.sleep(3)\n"
+    )
+    (preflight_project / "Makefile").write_text(
+        f"verify:\n\t{shlex.quote(sys.executable)} {shlex.quote(str(script))}\n"
+    )
+    with pytest.raises(subprocess.TimeoutExpired):
+        preflight.run(preflight_project, Path("preflight.yaml"))
+    report_path = next((preflight_project / "artifacts/preflight").glob("*/report.json"))
+    report = json.loads(report_path.read_text())
+    assert report["status"] == "failed" and "TimeoutExpired" in report["error"]
+    assert "quality started" in (report_path.parent / "quality.log").read_text()
+    assert not (report_path.parent / "submission.zip").exists()
+    time.sleep(1.5)
+    assert not marker.exists()
 
 
 def test_report_cannot_escape_project(preflight_project: Path, tmp_path: Path) -> None:

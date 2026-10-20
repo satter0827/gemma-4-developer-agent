@@ -63,15 +63,34 @@ def numeric_violations(tree: ast.AST, protected: set[str]) -> list[int]:
 
 def check(root: Path, policy: dict[str, Any]) -> list[str]:
     modules: dict[str, Path] = {}
+    errors = []
     for directory, prefix in policy["roots"].items():
         for path in (root / directory).rglob("*.py"):
             relative = path.relative_to(root / directory).with_suffix("").parts
             parts = [*prefix.split("."), *relative]
             if parts[-1] == "__init__":
                 parts.pop()
-            modules[".".join(parts)] = path
-    roles = {name: role for role, names in policy["modules"].items() for name in names}
-    errors = []
+            name = ".".join(parts)
+            if name in modules:
+                errors.append(f"Duplicate module path: {name}")
+            modules[name] = path
+    roles: dict[str, str] = {}
+    role_names = set(policy["modules"])
+    if set(policy["allowed"]) != role_names or not set(policy["gpu_free_roles"]) <= role_names:
+        errors.append("Architecture role policies must match the declared roles")
+    for role, names in policy["modules"].items():
+        if not set(policy["allowed"].get(role, [])) <= role_names:
+            errors.append(f"Unknown allowed dependency role: {role}")
+        for name in names:
+            if name in roles:
+                errors.append(f"Duplicate module classification: {name}")
+            if name not in modules:
+                errors.append(f"Classified module does not exist: {name}")
+            roles[name] = role
+    if not modules:
+        errors.append("No architecture modules found")
+    if errors:
+        return errors
     graph = {}
     known = set(modules)
     for name, path in modules.items():

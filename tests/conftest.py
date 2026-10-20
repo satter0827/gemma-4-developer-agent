@@ -2,8 +2,10 @@ import json
 import shlex
 import shutil
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -188,17 +190,14 @@ def preflight_project(diagnostic_project: DiagnosticSettings) -> Path:
 
 @pytest.fixture
 def preflight_report(preflight_project: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    import subprocess
-
     from gemma_agent_dev import preflight
 
-    original = subprocess.run
+    @contextmanager
+    def quality(args: list[str], **kwargs: Any) -> Iterator[Any]:
+        assert args == ["make", "verify"]
+        assert kwargs["env"]["UV_OFFLINE"] == "1"
+        kwargs["stdout"].write("Quality checks passed (fixture)\n")
+        yield SimpleNamespace(args=args, wait=lambda **_: 0)
 
-    def quality(args: list[str], **kwargs: Any) -> Any:
-        if args == ["make", "verify"]:
-            kwargs["stdout"].write("Quality checks passed (fixture)\n")
-            return subprocess.CompletedProcess(args, 0)
-        return original(args, **kwargs)
-
-    monkeypatch.setattr(subprocess, "run", quality)
+    monkeypatch.setattr(preflight, "process_group", quality)
     return preflight.run(preflight_project, Path("preflight.yaml"))

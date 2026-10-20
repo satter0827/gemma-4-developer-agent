@@ -78,7 +78,7 @@ numeric_parameters = ["timeout", "startup_timeout", "max_bytes", "concurrency", 
 "scripts" = "scripts"
 
 [tool.architecture.modules]
-core = ["gemma_agent_dev", "gemma_agent_dev.artifacts", "gemma_agent_dev.config", "gemma_agent_dev.results", "gemma_agent_dev.candidates", "gemma_agent_dev.packaging", "gemma_agent_dev.diagnostic_results"]
+core = ["gemma_agent_dev", "gemma_agent_dev.artifacts", "gemma_agent_dev.config", "gemma_agent_dev.results", "gemma_agent_dev.candidates", "gemma_agent_dev.packaging", "gemma_agent_dev.diagnostic_results", "gemma_agent_dev.processes"]
 settings = ["gemma_agent_dev.diagnostic_config"]
 connection = ["gemma_agent_dev.official", "gemma_agent_dev.environment"]
 diagnostic = ["gemma_agent_dev.diagnostics"]

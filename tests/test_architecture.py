@@ -42,7 +42,7 @@ def test_checker_rejects_bad_structures(
         (directory / f"{name}.py").write_text(code)
     policy: dict[str, Any] = {
         "roots": {"src": "pkg"},
-        "modules": {"one": ["pkg.a"], "two": ["pkg.b"]},
+        "modules": {"one": ["pkg.a"], "two": ["pkg.b"] if "b" in sources else []},
         "allowed": {"one": ["one"], "two": ["one", "two"]},
         "numeric_parameters": ["timeout"],
         "gpu_free_roles": ["one"],
@@ -51,6 +51,7 @@ def test_checker_rejects_bad_structures(
     if expected == "development entrypoint":
         policy["roots"] = {"src": "gemma_agent_dev"}
         policy["modules"] = {"one": ["gemma_agent_dev.a", "gemma_agent_dev.b"]}
+        policy["allowed"] = {"one": ["one"]}
     assert any(expected in error for error in CHECKER["check"](tmp_path, policy))
     (directory / "new.py").write_text("pass")
     assert any("Unclassified" in error for error in CHECKER["check"](tmp_path, policy))
@@ -166,3 +167,38 @@ def test_package_initializer_imports_are_resolved(tmp_path: Path, cyclic: bool) 
     errors = CHECKER["check"](tmp_path, policy)
     assert bool(errors) is cyclic
     assert not errors or "Import cycle" in errors[0]
+
+
+@pytest.mark.parametrize("damage", ["duplicate", "missing", "allowed", "role", "root", "empty"])
+def test_architecture_policy_cannot_silently_override_or_skip_modules(
+    tmp_path: Path, damage: str
+) -> None:
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "a.py").write_text("pass")
+    policy: dict[str, Any] = {
+        "roots": {"src": "pkg"},
+        "modules": {"core": ["pkg.a"]},
+        "allowed": {"core": ["core"]},
+        "numeric_parameters": [],
+        "gpu_free_roles": ["core"],
+        "inference_imports": [],
+    }
+    if damage == "duplicate":
+        policy["modules"]["other"] = ["pkg.a"]
+        policy["allowed"]["other"] = ["other"]
+    elif damage == "missing":
+        policy["modules"]["core"].append("pkg.missing")
+    elif damage == "allowed":
+        policy["allowed"]["core"].append("unknown")
+    elif damage == "role":
+        policy["allowed"] = {}
+    elif damage == "root":
+        second = tmp_path / "other"
+        second.mkdir()
+        (second / "a.py").write_text("pass")
+        policy["roots"]["other"] = "pkg"
+    else:
+        policy["roots"] = {}
+        policy["modules"]["core"] = []
+    assert CHECKER["check"](tmp_path, policy)

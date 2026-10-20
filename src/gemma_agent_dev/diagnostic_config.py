@@ -261,6 +261,7 @@ class DiagnosticSettings:
                 "diagnostic_results.py",
                 "config.py",
                 "artifacts.py",
+                "processes.py",
             )
         )
         hashes = {p.relative_to(self.root).as_posix(): file_hash(p) for p in paths}

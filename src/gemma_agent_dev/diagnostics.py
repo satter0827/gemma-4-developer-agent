@@ -5,7 +5,6 @@ import json
 import os
 import platform
 import shutil
-import signal
 import subprocess
 import tarfile
 import tempfile
@@ -17,6 +16,7 @@ from typing import Any
 from gemma_agent_dev.artifacts import file_hash, inventory, new_run_id, write_json
 from gemma_agent_dev.diagnostic_config import DiagnosticSettings, DiagnosticTask
 from gemma_agent_dev.diagnostic_results import diagnostic_evidence
+from gemma_agent_dev.processes import process_group
 
 
 def digest_text(value: str) -> str:
@@ -37,20 +37,25 @@ def environment(settings: DiagnosticSettings) -> dict[str, str]:
 
 
 def command(args: list[str], *, cwd: Path, timeout: int, env: dict[str, str] | None = None) -> str:
-    result = subprocess.run(
-        args,
-        cwd=cwd,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-    )
-    if result.returncode:
-        raise RuntimeError(
-            f"Command failed ({result.returncode}): {args[0]}\n{result.stdout}\n{result.stderr}"
-        )
-    return result.stdout
+    with (
+        tempfile.TemporaryFile("w+", encoding="utf-8") as stdout,
+        tempfile.TemporaryFile("w+", encoding="utf-8") as stderr,
+    ):
+        with process_group(
+            args,
+            cwd=cwd,
+            env=dict(os.environ) if env is None else env,
+            stdout=stdout,
+            stderr=stderr,
+        ) as process:
+            code = process.wait(timeout=timeout)
+        stdout.seek(0)
+        output = stdout.read()
+        stderr.seek(0)
+        errors = stderr.read()
+    if code:
+        raise RuntimeError(f"Command failed ({code}): {args[0]}\n{output}\n{errors}")
+    return output
 
 
 def prepare(settings: DiagnosticSettings) -> Path:
@@ -225,6 +230,7 @@ def run_case(
         "matched": False,
     }
     start = time.perf_counter()
+    process: subprocess.Popen[str] | None = None
     try:
         with tempfile.TemporaryDirectory(dir=settings.root / "artifacts/tmp") as temporary:
             workspace = Path(temporary) / "workspace"
@@ -250,23 +256,13 @@ def run_case(
             ]
             record["command"] = args
             with (output / "test.log").open("w") as log:
-                with subprocess.Popen(
+                with process_group(
                     args,
                     cwd=workspace,
                     env=env,
                     stdout=log,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True,
                 ) as process:
-                    try:
-                        record["exit_code"] = process.wait(timeout=settings.timeout_seconds)
-                    finally:
-                        # Reap the entire test process group before removing the workspace.
-                        try:
-                            os.killpg(process.pid, signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
-                        record["exit_code"] = process.wait()
+                    record["exit_code"] = process.wait(timeout=settings.timeout_seconds)
             outcome, counts = diagnostic_evidence(
                 record["exit_code"], output / "junit.xml", expected
             )
@@ -277,6 +273,8 @@ def run_case(
                 matched=outcome == expected,
             )
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, ET.ParseError) as error:
+        if process is not None:
+            record["exit_code"] = process.returncode
         record["error"] = f"{type(error).__name__}: {error}"
         if not (output / "test.log").exists():
             (output / "test.log").write_text(record["error"] + "\n")

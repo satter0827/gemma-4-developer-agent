@@ -26,6 +26,7 @@ from gemma_agent_dev.diagnostic_kaggle import verify_cases
 from gemma_agent_dev.diagnostic_results import junit_counts, validate_test_evidence
 from gemma_agent_dev.diagnostics import (
     check_prepared,
+    command,
     diagnose,
     environment,
     installed_environment,
@@ -33,6 +34,44 @@ from gemma_agent_dev.diagnostics import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize("timeout", [False, True])
+def test_preparation_commands_stop_descendants_on_exit_and_timeout(
+    tmp_path: Path, timeout: bool
+) -> None:
+    marker = tmp_path / "leaked-command-child"
+    child = f"import time; from pathlib import Path; time.sleep(2); Path({str(marker)!r}).touch()"
+    program = (
+        "import subprocess,sys,time\n"
+        f"subprocess.Popen([sys.executable, '-c', {child!r}])\n"
+        "print('command output', flush=True)\n" + ("time.sleep(30)\n" if timeout else "")
+    )
+    args = [sys.executable, "-c", program]
+    if timeout:
+        with pytest.raises(subprocess.TimeoutExpired):
+            command(args, cwd=tmp_path, timeout=1)
+    else:
+        assert command(args, cwd=tmp_path, timeout=5).strip() == "command output"
+    time.sleep(2.1)
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("code", [0, 7])
+def test_command_retains_stdout_semantics_and_failure_diagnostics(
+    tmp_path: Path, code: int
+) -> None:
+    args = [
+        sys.executable,
+        "-c",
+        f"import sys; print('output'); print('warning', file=sys.stderr); raise SystemExit({code})",
+    ]
+    if code:
+        with pytest.raises(RuntimeError, match=r"Command failed \(7\)") as raised:
+            command(args, cwd=tmp_path, timeout=5)
+        assert "output" in str(raised.value) and "warning" in str(raised.value)
+    else:
+        assert command(args, cwd=tmp_path, timeout=5) == "output\n"
 
 
 def test_real_patch_replay_is_isolated_and_creates_evidence(
