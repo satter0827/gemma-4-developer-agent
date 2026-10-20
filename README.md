@@ -40,6 +40,15 @@ kaggle kernels output satter0927/gemma-4-developer-agent-baseline -p artifacts/r
 
 生成先の名前は毎回新しく指定してください。既存フォルダーへの上書きはできません。送信対象とソースのハッシュは`source-manifest.json`で確認できます。2種類の実行は同じソースZIPを使い、実行種別は起動時に渡します。
 
+時間制限を比較するときは、両方の生成コマンドに同じ評価設定を指定します。省略時は1分設定のままです。
+
+```sh
+make cli ARGS='prepare-kaggle --name verify-5min --verify-only --eval-config configs/evaluation/5min.yaml'
+make cli ARGS='prepare-kaggle --name evaluation-5min --eval-config configs/evaluation/5min.yaml'
+```
+
+指定できるのはプロジェクト内の評価設定です。元のファイルは変更せず、選択した設定をソースZIP内の`agent/eval_config.yaml`へ格納します。選択元、SHA-256、適用値は`source-manifest.json`と実行manifestに記録します。
+
 既存実行の状態を確認してから次をアップロードします。コードの保存、実行開始、完了は別々に確認してください。Notebookの実行はコンペへの提出ではありません。
 
 ## 結果を確認する
