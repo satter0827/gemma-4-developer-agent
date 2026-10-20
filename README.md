@@ -74,6 +74,8 @@ make cli ARGS='compare RUN_ID_A RUN_ID_B'
 - `tests/`、`docs/`：テスト、設計、運用手順、検証状況。
 - `artifacts/`：`kaggle/`、`results/`、`reference/`、`venv/`、`cache/`、`tmp/`に生成物を集約します。Git管理対象外です。
 
+追加の探索手順・上限改善と主LoRAの比較はともに0/2でした。評価基盤とCLIの動作は確認済みですが、エージェントによる課題解決は未確認です。
+
 詳しくは[設計](docs/design.md)、[評価と提出の手順](docs/evaluation.md)、[検証状況](docs/validation.md)を参照してください。
 
 リポジトリと開発用Kaggle資産はコンペ期間中Privateで運用します。終了後の公開は、競技ルールと各資産の再配布条件を確認してから行います。
