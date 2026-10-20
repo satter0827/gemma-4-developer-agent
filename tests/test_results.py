@@ -100,3 +100,15 @@ def test_reference_verification_has_no_agent_score(make_run: Callable[..., Path]
         comparison_differences(result, result)
     (path / "controls.json").write_text(json.dumps(controls + controls[:1]))
     assert load_run(path).problems
+
+
+@pytest.mark.parametrize("field", ["verification_timeout_seconds", "vllm_config"])
+def test_comparison_checks_verification_time_and_applied_server_defaults(
+    make_run: Callable[..., Path], field: str
+) -> None:
+    left = load_run(make_run())
+    path = make_run("run-b")
+    manifest = json.loads((path / "manifest.json").read_text())
+    manifest[field] = 600 if field == "verification_timeout_seconds" else {"max_model_len": 16384}
+    (path / "manifest.json").write_text(json.dumps(manifest))
+    assert comparison_differences(left, load_run(path)) == [field]

@@ -27,6 +27,8 @@ def make_run(tmp_path: Path) -> Callable[..., Path]:
             "evaluation": {"max_time_minutes": 1},
             "environment": {"sandbox": "subprocess"},
             "tasks_sha256": "fixture",
+            "verification_timeout_seconds": 300,
+            "vllm_config": {"max_model_len": 32768},
             "runtime_config": {
                 "model_source": "fixture",
                 "docker_image": "fixture",

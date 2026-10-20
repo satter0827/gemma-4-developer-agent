@@ -191,7 +191,13 @@ def comparison_differences(left: Run, right: Run) -> list[str]:
     differences = []
     if set(left.task_ids) != set(right.task_ids):
         differences.append("task_ids")
-    for field in ("evaluation", "environment", "tasks_sha256"):
+    for field in (
+        "evaluation",
+        "environment",
+        "tasks_sha256",
+        "verification_timeout_seconds",
+        "vllm_config",
+    ):
         if field not in left.manifest or field not in right.manifest:
             differences.append(field)
         elif left.manifest[field] != right.manifest[field]:
