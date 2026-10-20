@@ -7,6 +7,8 @@ from dataclasses import field as dataclass_field
 from pathlib import Path
 from typing import Any
 
+from gemma_agent_dev.artifacts import file_hash
+
 
 def read_object(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
@@ -182,6 +184,14 @@ def load_run(path: Path, *, require_evaluation: bool = False) -> Run:
         problems.append(f"Cannot read summary: {error}")
     if required and set(rows) != set(ids):
         problems.append("Completed run has missing task results")
+    if "evaluation_artifacts" in manifest:
+        try:
+            for name, digest in manifest["evaluation_artifacts"].items():
+                artifact = (path / name).resolve()
+                if not artifact.is_relative_to(path.resolve()) or file_hash(artifact) != digest:
+                    raise ValueError("Evaluation artifact changed")
+        except (OSError, ValueError, TypeError, AttributeError) as error:
+            problems.append(f"Invalid evaluation artifacts: {error}")
     return Run(path, manifest, rows, tuple(problems))
 
 
@@ -213,7 +223,7 @@ def comparison_differences(left: Run, right: Run) -> list[str]:
     return differences
 
 
-def read_artifact(run: Run, relative: str, max_bytes: int = 2_000_000) -> str:
+def read_artifact(run: Run, relative: str, max_bytes: int) -> str:
     path = (run.path / relative).resolve()
     if not path.is_relative_to(run.path.resolve()):
         raise ValueError("Artifact path escapes the run directory")

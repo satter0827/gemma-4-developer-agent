@@ -9,7 +9,9 @@ import zipfile
 from pathlib import Path
 
 from gemma_agent_dev.artifacts import write_json
-from gemma_agent_dev.config import EvaluationSettings
+from gemma_agent_dev.config import EvaluationSettings, RuntimeSettings
+from gemma_agent_dev.diagnostic_config import DiagnosticSettings
+from gemma_agent_dev.preflight import load_report
 
 
 def prepare(
@@ -17,16 +19,14 @@ def prepare(
     destination: Path,
     *,
     verify_only: bool = False,
-    eval_config: Path | None = None,
+    report_path: Path,
 ) -> str:
     root = root.resolve()
-    selected = root / (eval_config if eval_config is not None else Path("agent/eval_config.yaml"))
-    if selected.is_symlink() or not selected.resolve().is_relative_to(root):
-        raise ValueError("Evaluation configuration must be a regular file inside the project")
-    selected = selected.resolve()
-    settings = EvaluationSettings.load(selected)
+    settings, report = load_report(root, report_path)
+    selected = settings.evaluation_config
     selected_content = selected.read_bytes()
-    config = json.loads((root / "configs/runtime.json").read_text())
+    evaluation = EvaluationSettings.load(selected)
+    config = RuntimeSettings.load(settings.runtime_config).as_dict()
     kernel_id = config["verification_kernel_id"] if verify_only else config["kernel_id"]
     if destination.exists():
         raise FileExistsError(destination)
@@ -40,18 +40,44 @@ def prepare(
                     "config.py",
                     "artifacts.py",
                     "official.py",
-                    "packaging.py",
+                    "environment.py",
                     "results.py",
+                    "candidates.py",
                 )
             ],
-            *root.glob("agent/**/*.yaml"),
-            *root.glob("agent/**/*.md"),
-            root / "configs/runtime.json",
             root / "kaggle/entry.py",
         ]
     )
     content = io.BytesIO()
     with zipfile.ZipFile(content, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, data in {
+            "configs/runtime.json": settings.runtime_config.read_bytes(),
+            "candidate.zip": (root / report_path)
+            .resolve()
+            .parent.joinpath("submission.zip")
+            .read_bytes(),
+            "candidate.json": json.dumps(
+                {
+                    "sha256": report["candidate_sha256"],
+                    "files": report["files"],
+                    "max_unpacked_bytes": settings.max_unpacked_bytes,
+                    "snapshots": {
+                        t.instance_id: t.snapshot_sha256
+                        for t in DiagnosticSettings.load(root, settings.diagnostic_config).tasks
+                    },
+                    "tasks_sha256": report["inputs"][
+                        str(
+                            DiagnosticSettings.load(
+                                root, settings.diagnostic_config
+                            ).tasks_file.relative_to(root)
+                        )
+                    ],
+                }
+            ).encode(),
+        }.items():
+            info = zipfile.ZipInfo(name)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, data)
         for path in files:
             if path.is_symlink():
                 raise ValueError(f"Symlink in source bundle: {path}")
@@ -59,9 +85,7 @@ def prepare(
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(
                 info,
-                selected_content
-                if info.filename == "agent/eval_config.yaml"
-                else path.read_bytes(),
+                path.read_bytes(),
             )
     payload = content.getvalue()
     digest = hashlib.sha256(payload).hexdigest()
@@ -72,10 +96,12 @@ def prepare(
     provenance = {
         "source_sha256": digest,
         "git_commit": commit,
+        "candidate_sha256": report["candidate_sha256"],
+        "preflight_sha256": hashlib.sha256((root / report_path).read_bytes()).hexdigest(),
         "evaluation_config": {
             "path": selected.relative_to(root).as_posix(),
             "sha256": hashlib.sha256(selected_content).hexdigest(),
-            "values": settings.as_dict(),
+            "values": evaluation.as_dict(),
         },
     }
     script = (root / "kaggle/entry.py").read_text() + (

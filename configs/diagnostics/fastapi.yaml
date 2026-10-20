@@ -1,0 +1,34 @@
+runtime_path: configs/runtime.json
+tasks_file: artifacts/reference/tasks.jsonl
+tasks_sha256: e4b3fd60f69dbc2b9213e54eeb9636db78aefe92c1d06269d73d9f5f8f3c8ad6
+cache_dir: artifacts/reference/diagnostics
+environments_dir: artifacts/task-envs
+output_dir: artifacts/diagnostics
+requirements: configs/diagnostics/requirements.in
+lock_file: configs/diagnostics/requirements.lock
+python_version: '3.12'
+kernel_id: satter0927/gemma-4-developer-agent-diagnostics
+timeout_seconds: 300
+pytest_args: [-p, pytest_timeout, -q]
+tasks:
+  - instance_id: fastapi_15661
+    snapshot_sha256: 765e6af89ca3388c17d70f6b00edf02598cb708e8f62d6d6d4ef4d6f8bc471e6
+    test_paths: [tests/test_prepare_release.py]
+    generated_patch: artifacts/results/adapter-20261020-base-gpu/artifacts/results/20261020T074844Z-156da8e1/patches/fastapi_15661.patch
+    generated_sha256: 232082af6bde7472eea2030cf11c0f09bbc234a72ae14643cb8846229baf82fa
+    collection_error_cases: [unmodified, generated, probe]
+    generated_expected_pass: false
+    probe_expected_pass: false
+    probe_replacements:
+      - {old: a/scripts/release.py, new: a/scripts/prepare_release.py, count: 1}
+      - {old: b/scripts/release.py, new: b/scripts/prepare_release.py, count: 2}
+  - instance_id: fastapi_15588
+    snapshot_sha256: b6d6ed611fdbacfd86e99ff4edbdf5f8b0bfe26cd92ed8006958882f518f02d2
+    test_paths: [tests/test_sse.py]
+    generated_patch: artifacts/results/adapter-20261020-base-gpu/artifacts/results/20261020T074844Z-156da8e1/patches/fastapi_15588.patch
+    generated_sha256: 7bb3b4ff3b5444a37dc4d210c04a97324f63e598c9993632227cd98496e8f5ca
+    collection_error_cases: []
+    generated_expected_pass: false
+    probe_expected_pass: true
+    probe_replacements:
+      - {old: must not contain newlines, new: must be a single line, count: 2}

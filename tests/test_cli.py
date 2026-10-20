@@ -12,7 +12,9 @@ from gemma_agent_dev.cli import main
 def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "project"
     (root / "src/gemma_agent_dev").mkdir(parents=True)
-    (root / "pyproject.toml").touch()
+    (root / "pyproject.toml").write_text(
+        "[tool.gemma_agent_dev.results]\nmax_artifact_bytes=2000000\n"
+    )
     monkeypatch.chdir(root)
     return root
 
@@ -112,16 +114,16 @@ def test_artifact_requires_task(project: Path) -> None:
 
 
 def test_prepare_uses_artifacts_and_prevents_overwrite(
-    project: Path, capsys: pytest.CaptureFixture[str]
+    preflight_project: Path,
+    preflight_report: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    source = Path(__file__).resolve().parents[1]
-    for directory in ("src", "agent", "configs", "kaggle"):
-        shutil.copytree(source / directory, project / directory, dirs_exist_ok=True)
-    before = {path.name for path in project.iterdir()}
-    assert main(["prepare-kaggle", "--name", "baseline-01"]) == 0
-    assert (project / "artifacts/kaggle/baseline-01/source-manifest.json").is_file()
-    assert {path.name for path in project.iterdir()} == before | {"artifacts"}
-    assert main(["prepare-kaggle", "--name", "baseline-01"]) == 1
+    monkeypatch.chdir(preflight_project)
+    args = ["prepare-kaggle", "--name", "baseline-01", "--preflight-report", str(preflight_report)]
+    assert main(args) == 0
+    assert (preflight_project / "artifacts/kaggle/baseline-01/source-manifest.json").is_file()
+    assert main(args) == 1
     assert capsys.readouterr().err
 
 
@@ -145,49 +147,9 @@ def test_failed_run_is_displayed_without_a_read_error(
     assert "失敗" in output.out and not output.err
 
 
-def test_prepare_accepts_selected_evaluation_configuration(project: Path) -> None:
-    source = Path(__file__).resolve().parents[1]
-    for directory in ("src", "agent", "configs", "kaggle"):
-        shutil.copytree(source / directory, project / directory, dirs_exist_ok=True)
-    assert (
-        main(
-            [
-                "prepare-kaggle",
-                "--name",
-                "five",
-                "--verify-only",
-                "--eval-config",
-                "configs/evaluation/5min.yaml",
-            ]
-        )
-        == 0
-    )
-    manifest = json.loads((project / "artifacts/kaggle/five/source-manifest.json").read_text())
-    assert manifest["evaluation_config"]["values"]["max_time_minutes"] == 5
-
-
-@pytest.mark.parametrize("content", [None, "evaluation: [", "evaluation: {}"])
-def test_prepare_rejects_missing_or_invalid_configuration(
-    project: Path,
-    capsys: pytest.CaptureFixture[str],
-    content: str | None,
-) -> None:
-    if content is not None:
-        (project / "selected.yaml").write_text(content)
-    assert (
-        main(
-            [
-                "prepare-kaggle",
-                "--name",
-                "invalid",
-                "--eval-config",
-                "selected.yaml",
-            ]
-        )
-        == 1
-    )
-    assert capsys.readouterr().err
-    assert not (project / "artifacts").exists()
+def test_prepare_requires_completed_preflight(project: Path) -> None:
+    assert main(["prepare-kaggle", "--name", "missing"]) == 1
+    assert main(["prepare-kaggle", "--name", "missing", "--preflight-report", "missing.json"]) == 1
 
 
 def test_comparison_reports_a_changed_agent_even_with_equal_budgets(

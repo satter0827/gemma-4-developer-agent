@@ -12,8 +12,9 @@ from typing import Any
 import pytest
 
 
+@pytest.mark.parametrize("diagnostic", [False, True])
 def test_entry_extracts_and_cleans_sources_inside_artifacts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, diagnostic: bool
 ) -> None:
     namespace = runpy.run_path(str(Path(__file__).resolve().parents[1] / "kaggle/entry.py"))
     entry = namespace["main"]
@@ -26,10 +27,11 @@ def test_entry_extracts_and_cleans_sources_inside_artifacts(
     monkeypatch.setattr(tempfile, "tempdir", tempfile.tempdir)
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     extracted = []
-    module = types.ModuleType("gemma_agent_dev.runtime")
+    module_name = "gemma_agent_dev.diagnostic_kaggle" if diagnostic else "gemma_agent_dev.runtime"
+    module = types.ModuleType(module_name)
 
     def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) -> None:
-        assert verify_only
+        assert verify_only is not diagnostic
         assert sys.dont_write_bytecode
         extracted.append(root)
         assert root.is_relative_to(artifacts / "tmp")
@@ -37,7 +39,7 @@ def test_entry_extracts_and_cleans_sources_inside_artifacts(
         assert Path(sys.pycache_prefix or "").is_relative_to(artifacts)
 
     module.run = run  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "gemma_agent_dev.runtime", module)
+    monkeypatch.setitem(sys.modules, module_name, module)
     content = io.BytesIO()
     with zipfile.ZipFile(content, "w") as archive:
         archive.writestr("src/example.py", "pass\n")
@@ -45,7 +47,8 @@ def test_entry_extracts_and_cleans_sources_inside_artifacts(
     entry(
         base64.b64encode(payload).decode(),
         {"source_sha256": hashlib.sha256(payload).hexdigest()},
-        verify_only=True,
+        verify_only=not diagnostic,
+        diagnostic=diagnostic,
     )
     assert extracted and not extracted[0].exists()
     assert {path.name for path in tmp_path.iterdir()} == {"artifacts"}

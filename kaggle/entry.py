@@ -12,7 +12,13 @@ from typing import Any
 ARTIFACTS_ROOT = Path("/kaggle/working/artifacts")
 
 
-def main(source_b64: str, provenance: dict[str, Any], *, verify_only: bool = False) -> None:
+def main(
+    source_b64: str,
+    provenance: dict[str, Any],
+    *,
+    verify_only: bool = False,
+    diagnostic: bool = False,
+) -> None:
     payload = base64.b64decode(source_b64, validate=True)
     if hashlib.sha256(payload).hexdigest() != provenance["source_sha256"]:
         raise ValueError("Source bundle checksum mismatch")
@@ -31,6 +37,11 @@ def main(source_b64: str, provenance: dict[str, Any], *, verify_only: bool = Fal
                     raise ValueError("Invalid source bundle path")
             archive.extractall(root)
         sys.path.insert(0, str(root / "src"))
+        if diagnostic:
+            from gemma_agent_dev.diagnostic_kaggle import run as run_diagnostics
+
+            run_diagnostics(root, provenance)
+            return
         from gemma_agent_dev.runtime import run
 
         run(root, provenance, verify_only=verify_only)

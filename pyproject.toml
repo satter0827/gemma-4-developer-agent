@@ -16,7 +16,7 @@ build-backend = "hatchling.build"
 packages = ["src/gemma_agent_dev"]
 
 [dependency-groups]
-dev = ["pytest>=8,<10", "ruff>=0.12,<1", "mypy>=1.17,<2", "types-PyYAML>=6,<7"]
+dev = ["pytest>=8,<10", "ruff>=0.12,<1", "mypy>=1.17,<2", "types-PyYAML>=6,<7", "coverage>=7.10,<8"]
 
 [tool.ruff]
 target-version = "py312"
@@ -24,13 +24,13 @@ line-length = 100
 cache-dir = "artifacts/cache/ruff"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+select = ["E", "F", "I", "B", "UP", "PLR2004"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 cache_dir = "artifacts/cache/mypy"
-files = ["src", "tests", "kaggle"]
+files = ["src", "tests", "kaggle", "scripts"]
 
 [[tool.mypy.overrides]]
 module = ["swegemma.*", "adk_submission.*", "adk_eval_core.*", "google.adk.*", "litellm", "torch"]
@@ -40,3 +40,64 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 cache_dir = "artifacts/cache/pytest"
 addopts = "--basetemp=artifacts/tmp/pytest"
+
+[tool.coverage.run]
+branch = true
+source = ["gemma_agent_dev", "kaggle", "scripts"]
+data_file = "artifacts/coverage/.coverage"
+relative_files = true
+
+[tool.coverage.paths]
+package = ["src/gemma_agent_dev", "*/site-packages/gemma_agent_dev"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+
+[tool.coverage.json]
+output = "artifacts/coverage/coverage.json"
+
+[tool.coverage.html]
+directory = "artifacts/coverage/html"
+
+[tool.coverage_gate]
+line = 90
+branch = 80
+
+[tool.gemma_agent_dev.results]
+max_artifact_bytes = 2000000
+
+[tool.architecture]
+gpu_free_roles = ["core", "settings", "diagnostic", "local", "cli", "quality"]
+inference_imports = ["torch", "litellm", "swegemma", "adk_submission", "adk_eval_core", "google.adk"]
+numeric_parameters = ["timeout", "startup_timeout", "max_bytes", "concurrency", "retries", "max_attempts"]
+
+[tool.architecture.roots]
+"src/gemma_agent_dev" = "gemma_agent_dev"
+"kaggle" = "kaggle"
+"scripts" = "scripts"
+
+[tool.architecture.modules]
+core = ["gemma_agent_dev", "gemma_agent_dev.artifacts", "gemma_agent_dev.config", "gemma_agent_dev.results", "gemma_agent_dev.candidates", "gemma_agent_dev.packaging", "gemma_agent_dev.diagnostic_results", "gemma_agent_dev.processes"]
+settings = ["gemma_agent_dev.diagnostic_config"]
+connection = ["gemma_agent_dev.official", "gemma_agent_dev.environment"]
+diagnostic = ["gemma_agent_dev.diagnostics"]
+local = ["gemma_agent_dev.preflight", "gemma_agent_dev.kaggle_bundle", "gemma_agent_dev.diagnostic_bundle"]
+remote = ["gemma_agent_dev.runtime", "gemma_agent_dev.diagnostic_kaggle"]
+cli = ["gemma_agent_dev.cli"]
+entry = ["kaggle.entry"]
+quality = ["scripts.check_coverage", "scripts.check_architecture"]
+
+[tool.architecture.allowed]
+core = ["core"]
+settings = ["core", "settings"]
+connection = ["core", "connection"]
+diagnostic = ["core", "settings", "diagnostic"]
+local = ["core", "settings", "diagnostic", "local"]
+remote = ["core", "connection", "remote"]
+cli = ["core", "settings", "diagnostic", "local", "cli"]
+entry = ["remote"]
+quality = ["quality"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR2004"]
