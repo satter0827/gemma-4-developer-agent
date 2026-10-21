@@ -17,7 +17,7 @@
 
 ローカルの診断8条件、プロジェクトのテスト件数・カバレッジ、以前のSSE課題の18/24テスト通過は、それぞれ別の検証です。過去の別候補の個別テスト通過を、初回提出ZIPの解決実績に加算しません。
 
-証拠の実体はGit管理外の`artifacts/research/20261021/scoring/`と`artifacts/results/initial-gpu-20261020/`に保存しています。
+証拠の実体はGit管理外の`artifacts/research/20261021/scoring/`と`artifacts/results/initial-gpu-20261020/`に保存しています。`analyze`による再読込でも、初回ZIPの両課題は生成時間切れ、以前のSSE候補は18件通過・6件失敗、リリース候補は収集エラー1件・実行テスト0件と確認できました。派生分析は`artifacts/analysis/20261021T005438Z-0e8d3cd6/`と`artifacts/analysis/20261021T005438Z-b00105a8/`に保存しています。
 
 ## 公開手法の採否
 
