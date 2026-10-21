@@ -24,6 +24,7 @@ def prepare(
     verify_only: bool = False,
     report_path: Path,
     cpu_report: Path | None = None,
+    bundle_dataset: str | None = None,
 ) -> str:
     root = root.resolve()
     settings, report = load_report(root, report_path)
@@ -121,7 +122,9 @@ def prepare(
         kernel_id,
         verify_only=verify_only,
         diagnostic=False,
+        bundle_dataset=bundle_dataset,
     )
+    (destination / "source-bundle.zip").write_bytes(payload)
     write_json(
         destination / "source-manifest.json",
         {

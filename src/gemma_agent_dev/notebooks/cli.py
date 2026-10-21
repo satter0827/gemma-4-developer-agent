@@ -11,6 +11,10 @@ from gemma_agent_dev.common.paths import artifact_directory
 def configure(commands: Any) -> None:
     prepare = commands.add_parser("prepare-kaggle", help="Private用の提出準備コードを生成")
     prepare.add_argument("--name", required=True, help="生成先の名前")
+    prepare.add_argument(
+        "--bundle-dataset",
+        help="ソースZIPを配置するPrivate Datasetのowner/name。アップロードは別操作",
+    )
     prepare.add_argument("--experiment-report", type=Path, help="固定した比較実験の記録")
     prepare.add_argument("--optimization-report", type=Path, help="固定した最適化の準備記録")
     prepare.add_argument("--quota", type=Path, help="GPU実行前に観測した枠と消費量")
@@ -27,6 +31,7 @@ def run(root: Path, args: argparse.Namespace) -> int:
     from gemma_agent_dev.notebooks.evaluation import prepare as build_bundle
 
     destination = artifact_directory(root, "kaggle") / args.name
+    external = {"bundle_dataset": args.bundle_dataset} if args.bundle_dataset else {}
     if args.optimization_report:
         if args.experiment_report or args.diagnostics_config or args.preflight_report:
             args.command_parser.error("--optimization-reportは他の評価設定と併用できません。")
@@ -41,6 +46,7 @@ def run(root: Path, args: argparse.Namespace) -> int:
             verify_only=args.verify_only,
             cpu_report=args.cpu_report,
             quota=json.loads(args.quota.read_text()) if args.quota else None,
+            **external,
         )
         print(f"保存先：{destination}\nソースSHA-256：{digest}")
         return 0
@@ -59,6 +65,7 @@ def run(root: Path, args: argparse.Namespace) -> int:
             verify_only=args.verify_only,
             cpu_report=args.cpu_report,
             quota=quota,
+            **external,
         )
         print(f"保存先：{destination}\nソースSHA-256：{digest}")
         return 0
@@ -69,7 +76,7 @@ def run(root: Path, args: argparse.Namespace) -> int:
             args.command_parser.error("--diagnostics-configは他の評価設定と併用できません。")
         from gemma_agent_dev.notebooks.diagnostics import prepare as build_diagnostics
 
-        digest = build_diagnostics(root, destination, args.diagnostics_config)
+        digest = build_diagnostics(root, destination, args.diagnostics_config, **external)
         print(f"保存先：{destination}\nソースSHA-256：{digest}")
         return 0
     if args.preflight_report is None:
@@ -80,6 +87,7 @@ def run(root: Path, args: argparse.Namespace) -> int:
         report_path=args.preflight_report,
         verify_only=args.verify_only,
         cpu_report=args.cpu_report,
+        **external,
     )
     print(f"保存先：{destination}\nソースSHA-256：{digest}")
     return 0

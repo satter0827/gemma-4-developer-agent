@@ -95,3 +95,11 @@ GEPA用Wheelは準備コマンドが公式PyPIから取得し、`artifacts/refer
 最適化は比較用の生成5分・30ツール呼出し・50ターン、採点5分を固定します。起動20分、8評価で88分、指示生成2分、CPU準備10分、後始末5分の上限は合計125分です。GPU予算の初期値は未設定です。実行する場合は、最適化設定へ必要時間以上の`gpu_budget`を明示し、既存消費約2.830時間を含めたquotaを確認してください。設定変更後は新しい準備・CPU検証が必要です。候補を採用する場合は、指示を自作候補として新しいIDへ固定し、通常の事前検証と独立した比較を行います。
 
 最適化の`gpu_budget`を設定する場合は、`job_timeout_seconds`（全体の秒数）、`quota_hours`（対象予算の時間）、`reserve_hours`（残す時間）、`quota_per_wall_hour`（壁時計1時間当たりの消費係数）、`max_runs`（実行回数）をすべて記入します。初期の4時間枠へ上限125分の実行を足せるとは限りません。時間の見積もり、観測した消費・残枠、予備を照合し、許可されない場合は実行しません。
+
+## 起動コードのサイズ制限
+
+KaggleのSaveKernelは1MB以上のソースを拒否します。生成時はUTF-8で1,000,000バイト未満を上限とし、超過した場合は生成先を作成せず停止します。小さいバンドルはLZMAで埋め込みます。
+
+大きいバンドルには`prepare-kaggle`の`--bundle-dataset OWNER/PRIVATE_DATASET`を指定します。この指定だけではアップロードも実行も行いません。生成先の`source-bundle.zip`を、別のアップロード用ディレクトリへ`source-bundle.bin`として同一バイト列でコピーします。`dataset-metadata.json`のIDは指定したDatasetに揃え、`kaggle datasets create -p UPLOAD_DIRECTORY`でPrivateとして登録します。`--public`は指定しません。ZIPの自動展開を避けるため、転送名は`.bin`です。
+
+Datasetはソースハッシュごとに新しいIDを使い、作成後は更新しません。Privateであることと、取得した`source-bundle.bin`のSHA-256が生成記録の`source_sha256`に一致することを確認してからNotebookを起動します。Notebookは入力を読み込んだ後にもハッシュを照合します。CPUとGPUで同じバンドルを使い、候補ZIPを再生成しません。

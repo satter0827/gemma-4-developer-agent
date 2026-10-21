@@ -214,7 +214,9 @@ def test_diagnostic_bundle_is_cpu_only_and_separate(diagnostic_project: Diagnost
     assert isinstance(guard, ast.If)
     statement = guard.body[0]
     assert isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call)
-    payload = base64.b64decode(ast.literal_eval(statement.value.args[0]))
+    import lzma
+
+    payload = lzma.decompress(base64.b64decode(ast.literal_eval(statement.value.args[0])))
     assert hashlib.sha256(payload).hexdigest() == digest
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
         assert all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist())

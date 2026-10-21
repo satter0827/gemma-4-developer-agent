@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import io
+import lzma
 import runpy
 import sys
 import tempfile
@@ -13,8 +14,9 @@ import pytest
 
 
 @pytest.mark.parametrize("diagnostic", [False, True])
+@pytest.mark.parametrize("external", [False, True])
 def test_entry_extracts_and_cleans_sources_inside_artifacts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, diagnostic: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, diagnostic: bool, external: bool
 ) -> None:
     namespace = runpy.run_path(
         str(Path(__file__).resolve().parents[2] / "src/gemma_agent_dev/notebooks/entry.py")
@@ -53,13 +55,47 @@ def test_entry_extracts_and_cleans_sources_inside_artifacts(
     with zipfile.ZipFile(content, "w") as archive:
         archive.writestr("src/example.py", "pass\n")
     payload = content.getvalue()
+    source = None
+    if external:
+        inputs = tmp_path / "inputs"
+        inputs.mkdir()
+        source = inputs / "source-bundle.zip"
+        source.write_bytes(payload)
+        monkeypatch.setitem(entry.__globals__, "INPUTS_ROOT", inputs)
     entry(
-        base64.b64encode(payload).decode(),
+        None if external else base64.b64encode(lzma.compress(payload)).decode(),
         {"source_sha256": hashlib.sha256(payload).hexdigest()},
         timeout_seconds=60,
         progress_interval_seconds=1,
         verify_only=not diagnostic,
         diagnostic=diagnostic,
+        payload_path=str(source) if source else None,
     )
     assert extracted and not extracted[0].exists()
-    assert {path.name for path in tmp_path.iterdir()} == {"artifacts"}
+    assert {path.name for path in tmp_path.iterdir()} == (
+        {"artifacts", "inputs"} if external else {"artifacts"}
+    )
+
+
+@pytest.mark.parametrize("damage", ["missing", "duplicate", "outside", "hash"])
+def test_entry_rejects_invalid_external_payload_before_execution(
+    tmp_path: Path, damage: str
+) -> None:
+    namespace = runpy.run_path(
+        str(Path(__file__).resolve().parents[2] / "src/gemma_agent_dev/notebooks/entry.py")
+    )
+    entry = namespace["main"]
+    source = tmp_path / "source-bundle.zip"
+    source.write_bytes(b"changed")
+    entry.__globals__["INPUTS_ROOT"] = tmp_path
+    provenance = {"source_sha256": "0" * 64}
+    if damage == "outside":
+        entry.__globals__["INPUTS_ROOT"] = tmp_path / "other"
+    with pytest.raises(ValueError):
+        entry(
+            "encoded" if damage == "duplicate" else None,
+            provenance,
+            payload_path=None if damage == "missing" else str(source),
+            timeout_seconds=1,
+            progress_interval_seconds=1,
+        )

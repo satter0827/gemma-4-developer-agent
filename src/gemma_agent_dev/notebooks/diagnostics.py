@@ -95,7 +95,9 @@ def verified_spec(settings: DiagnosticSettings) -> dict[str, Any]:
     return spec
 
 
-def prepare(root: Path, destination: Path, config: Path) -> str:
+def prepare(
+    root: Path, destination: Path, config: Path, *, bundle_dataset: str | None = None
+) -> str:
     settings = DiagnosticSettings.load(root, config)
     spec = verified_spec(settings)
     if destination.exists():
@@ -123,7 +125,9 @@ def prepare(root: Path, destination: Path, config: Path) -> str:
         settings.kernel_id,
         verify_only=True,
         diagnostic=True,
+        bundle_dataset=bundle_dataset,
     )
+    (destination / "source-bundle.zip").write_bytes(payload)
     write_json(
         destination / "source-manifest.json",
         {

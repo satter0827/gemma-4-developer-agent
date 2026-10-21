@@ -38,6 +38,7 @@ def prepare(
     verify_only: bool,
     cpu_report: Path | None,
     quota: dict[str, Any] | None = None,
+    bundle_dataset: str | None = None,
 ) -> str:
     experiment, report = load_preparation(root, report_path)
     diagnostic = DiagnosticSettings.load(root, experiment.diagnostic_config)
@@ -107,6 +108,7 @@ def prepare(
         runtime["verification_kernel_id"] if verify_only else runtime["kernel_id"],
         verify_only=verify_only,
         diagnostic=False,
+        bundle_dataset=bundle_dataset,
     )
     (destination / "source-bundle.zip").write_bytes(content)
     write_json(

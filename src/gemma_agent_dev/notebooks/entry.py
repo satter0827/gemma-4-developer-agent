@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import io
+import lzma
 import os
 import sys
 import tempfile
@@ -11,19 +12,30 @@ from pathlib import Path
 from typing import Any
 
 ARTIFACTS_ROOT = Path("/kaggle/working/artifacts")
+INPUTS_ROOT = Path("/kaggle/input")
 
 
 def main(
-    source_b64: str,
+    source_b64: str | None,
     provenance: dict[str, Any],
     *,
     timeout_seconds: int,
     progress_interval_seconds: int,
     verify_only: bool = False,
     diagnostic: bool = False,
+    payload_path: str | None = None,
 ) -> None:
     start = time.monotonic()
-    payload = base64.b64decode(source_b64, validate=True)
+    if (source_b64 is None) == (payload_path is None):
+        raise ValueError("Expected exactly one source payload")
+    if payload_path is not None:
+        source = Path(payload_path).resolve()
+        if not source.is_relative_to(INPUTS_ROOT.resolve()):
+            raise ValueError("Source payload must belong to the mounted inputs")
+        payload = source.read_bytes()
+    else:
+        assert source_b64 is not None
+        payload = lzma.decompress(base64.b64decode(source_b64, validate=True))
     if hashlib.sha256(payload).hexdigest() != provenance["source_sha256"]:
         raise ValueError("Source bundle checksum mismatch")
     temporary = ARTIFACTS_ROOT / "tmp"
