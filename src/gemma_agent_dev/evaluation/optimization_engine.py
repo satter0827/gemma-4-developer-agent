@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from gemma_agent_dev.common.events import context, event
+from gemma_agent_dev.evaluation.analysis import SCORABLE_TERMINATIONS
 from gemma_agent_dev.evaluation.optimization_limits import SearchBudget
 
 GEPA_VERSION = "0.1.4"
@@ -33,12 +34,7 @@ class SearchOutcome:
     def parse(cls, value: Any) -> "SearchOutcome":
         if not isinstance(value, dict) or set(value) != set(cls.__dataclass_fields__):
             raise ValueError("Invalid optimization evaluation outcome")
-        if type(value["resolved"]) is not bool or value["termination"] not in {
-            "completed",
-            "time_limit_reached",
-            "tool_limit_reached",
-            "context_window_exceeded",
-        }:
+        if type(value["resolved"]) is not bool or value["termination"] not in SCORABLE_TERMINATIONS:
             raise RuntimeError("Infrastructure errors or incomplete evaluations cannot be scored")
         if (
             value["implementation_changed"] is not None

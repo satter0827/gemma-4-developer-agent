@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from gemma_agent_dev.common.config import mapping
+from gemma_agent_dev.evaluation.analysis import SCORABLE_TERMINATIONS
 from gemma_agent_dev.evaluation.session_policy import VARIANTS_PER_PAIR
 from gemma_agent_dev.tasks.pools import identifier
 
@@ -134,6 +135,7 @@ def validate_extra(row: dict[str, Any]) -> None:
             "context_window_exceeded",
             "time_limit_reached",
             "tool_limit_reached",
+            "turn_limit_reached",
             "verification_timeout",
         }:
             raise ValueError("Invalid observation state")
@@ -174,7 +176,7 @@ def validate_extra(row: dict[str, Any]) -> None:
                 key = "not_run"
             elif any(item["status"] != "completed" for item in (left, right)):
                 key = "incomplete"
-            elif any(item["termination"] != "completed" for item in (left, right)):
+            elif any(item["termination"] not in SCORABLE_TERMINATIONS for item in (left, right)):
                 key = "errors"
             else:
                 key = (

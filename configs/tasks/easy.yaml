@@ -80,6 +80,15 @@ uses:
   - fastapi_14463
   - rich_3006
   - requests_6589
+- experiment_id: easy-skills-v2
+  purpose: tuning
+  task_ids:
+  - fastapi_14297
+  - rich_3944
+  - requests_6592
+  - fastapi_14463
+  - rich_3006
+  - requests_6589
 - experiment_id: easy-gepa-v1
   purpose: tuning
   task_ids:

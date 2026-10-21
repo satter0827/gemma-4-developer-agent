@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from gemma_agent_dev.common.artifacts import file_hash, write_json
+from gemma_agent_dev.common.artifacts import content_hash, file_hash, write_json
 from gemma_agent_dev.evaluation import session as session_module
-from gemma_agent_dev.evaluation.experiment_results import summarize
+from gemma_agent_dev.evaluation.experiment_results import load_cpu, summarize
 from gemma_agent_dev.notebooks import experiments as bundles
 
 session: Any = session_module
@@ -31,6 +31,10 @@ def session_fixture(
     runtime["paths"]["output"] = str(root / "artifacts/results")
     runtime["paths"]["data"] = str(root / "data")
     write_json(extracted / "runtime.json", runtime)
+    spec = json.loads((extracted / "experiment.json").read_text())
+    spec["definition"]["runtime"] = runtime
+    spec["definition_sha256"] = content_hash(spec["definition"])
+    write_json(extracted / "experiment.json", spec)
     data = root / "data"
     data.mkdir()
     (data / "snapshots").mkdir()
@@ -100,6 +104,13 @@ def session_fixture(
         lambda name: runtime["packages"][name],
     )
     monkeypatch.setattr(
+        "gemma_agent_dev.evaluation.session.importlib.metadata.distributions",
+        lambda: [
+            SimpleNamespace(metadata={"Name": name}, version=version)
+            for name, version in runtime["packages"].items()
+        ],
+    )
+    monkeypatch.setattr(
         session, "generation_contract", lambda *a: [{"model": "same", "sampling": "same"}]
     )
     monkeypatch.setattr(session, "make_validator", lambda *a: lambda p: calls.append("compile"))
@@ -150,6 +161,7 @@ def session_fixture(
 
     monkeypatch.setattr(session, "evaluate", evaluate)
     metadata = json.loads((bundle / "source-manifest.json").read_text())
+    metadata["definition_sha256"] = spec["definition_sha256"]
     return extracted, metadata, calls
 
 
@@ -301,7 +313,7 @@ def test_cpu_proof_checks_artifacts_and_bundle_identity(
         and "start" not in calls
         and "evaluate" not in calls
     )
-    bundles.load_cpu(
+    load_cpu(
         path,
         provenance["source_sha256"],
         provenance["definition_sha256"],
@@ -309,7 +321,7 @@ def test_cpu_proof_checks_artifacts_and_bundle_identity(
         report["variants"],
     )
     with pytest.raises(ValueError):
-        bundles.load_cpu(
+        load_cpu(
             path, "changed", provenance["definition_sha256"], report["task_ids"], report["variants"]
         )
     with pytest.raises(ValueError):
@@ -317,7 +329,7 @@ def test_cpu_proof_checks_artifacts_and_bundle_identity(
     first = next((path.parent / "controls").rglob("origins.json"))
     first.write_text("{}")
     with pytest.raises(ValueError, match="artifacts"):
-        bundles.load_cpu(
+        load_cpu(
             path,
             provenance["source_sha256"],
             provenance["definition_sha256"],
@@ -349,7 +361,7 @@ def test_local_proof_keeps_native_and_sdk_environments_separate(
     report = json.loads(path.read_text())
     assert report["control_engine"] == "native-python"
     assert "controls" not in calls and "install" not in calls and "start" not in calls
-    bundles.load_cpu(
+    load_cpu(
         path,
         provenance["source_sha256"],
         spec["definition_sha256"],
@@ -381,3 +393,91 @@ def test_inline_sampling_difference_blocks_shared_model(
     with pytest.raises(ValueError, match="identical adapters"):
         session.run(root, provenance)
     assert "start" not in calls and "create" not in calls
+
+
+@pytest.mark.parametrize("fault", ["initialization", "write", "close"])
+def test_logging_fault_preserves_official_outcome_and_cleanup(
+    session_fixture: Any, monkeypatch: pytest.MonkeyPatch, capsys: Any, fault: str
+) -> None:
+    from gemma_agent_dev.common import events
+
+    root, provenance, calls = session_fixture
+    original = events.EventHandler.close
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        raise OSError("secret credentials")
+
+    if fault == "initialization":
+        monkeypatch.setattr(events.EventHandler, "__init__", fail)
+    elif fault == "write":
+        monkeypatch.setattr(events.EventHandler, "doRollover", fail)
+        monkeypatch.setattr(events.EventHandler, "shouldRollover", lambda *a: True)
+    else:
+
+        def close(handler: Any) -> None:
+            original(handler)
+            fail()
+
+        monkeypatch.setattr(events.EventHandler, "close", close)
+    path = session.run(root, {**provenance, "job_id": "job-current"})
+    report = json.loads(path.read_text())
+    assert report["status"] == "completed" and calls[-1] == "stop"
+    assert summarize(path, max_bytes=2000000)["counts"]["both"] == 1
+    assert events.load_health(path.parent)["status"] == "degraded"
+    for cell in report["cells"]:
+        assert json.loads((path.parent / cell["manifest"]).read_text())["job_id"] == "job-current"
+    captured = capsys.readouterr()
+    assert captured.err.count("Cannot save") == 1 and "secret" not in captured.err
+
+
+@pytest.mark.parametrize(
+    "damage", ["none", "archive", "cpu", "cell", "sdk", "incomplete", "controls", "variant"]
+)
+def test_paired_registration_uses_original_archive_and_validates_all_evidence(
+    session_fixture: Any, monkeypatch: pytest.MonkeyPatch, damage: str
+) -> None:
+    from gemma_agent_dev.candidates.experiment_evidence import qualify_experiment
+    from gemma_agent_dev.evaluation import sequential_checks
+
+    root, provenance, calls = session_fixture
+    monkeypatch.setattr(sequential_checks, "run", lambda *a: {"status": "completed"})
+    cpu = session.run(root, provenance, verify_only=True)
+    gpu = session.run(root, provenance)
+    report = json.loads(gpu.read_text())
+    variant = "sequential-v1"
+    if damage == "archive":
+        (gpu.parent / report["candidate_archives"][variant]["path"]).write_bytes(b"changed")
+    elif damage == "cpu":
+        value = json.loads(cpu.read_text())
+        value["evidence_inputs"]["tasks_sha256"] = "changed"
+        write_json(cpu, value)
+    elif damage in {"cell", "sdk"}:
+        cell = report["cells"][0]
+        path = gpu.parent / cell["manifest"]
+        value = json.loads(path.read_text())
+        if damage == "cell":
+            value["runtime_config"]["context_cache"] = {}
+        else:
+            value["dependencies"]["swegemma"] = "changed"
+        write_json(path, value)
+        cell["sha256"] = file_hash(path)
+    elif damage == "incomplete":
+        report["actual_order"] = report["actual_order"][:1]
+    elif damage == "controls":
+        next((gpu.parent / "controls").rglob("origins.json")).write_text("{}")
+    elif damage == "variant":
+        variant = "foreign"
+    write_json(gpu, report)
+    source = {
+        "owner": "owner",
+        "kernel": "kernel",
+        "version": 1,
+        "path": "results/run/archives/sequential-v1/submission.zip",
+    }
+    if damage != "none":
+        with pytest.raises((ValueError, OSError)):
+            qualify_experiment(cpu, gpu, variant, source, 10000000)
+    else:
+        candidate = qualify_experiment(cpu, gpu, variant, source, 10000000)
+        assert candidate["evidence"]["kind"] == "paired-experiment"
+        assert candidate["archive_sha256"] == file_hash(root / variant / "submission.zip")

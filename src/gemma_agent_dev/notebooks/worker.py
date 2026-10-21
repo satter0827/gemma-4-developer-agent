@@ -76,10 +76,16 @@ def _run_bounded(
                 list((storage / "results").rglob("manifest.json"))
                 + list((storage / "results").rglob("session.json"))
                 + list((storage / "results").rglob("search.json"))
+                + list((storage / "diagnostics").rglob("report.json"))
             ):
-                manifest = json.loads(path.read_text())
+                try:
+                    manifest = json.loads(path.read_text())
+                except (OSError, ValueError):
+                    continue
                 if (
-                    manifest.get("status") == "running"
+                    isinstance(manifest, dict)
+                    and manifest.get("status") == "running"
+                    and manifest.get("job_id") == output.name
                     and manifest.get("source_sha256") == provenance["source_sha256"]
                 ):
                     manifest.update(status="failed", error=receipt["error"], phase="watchdog")
@@ -111,9 +117,10 @@ def run_bounded(
 ) -> None:
     output = storage / "jobs" / new_run_id()
     output.mkdir(parents=True)
+    provenance = {**provenance, "job_id": output.name}
     with (
         bundle_session(root, output, provenance),
-        context(session_id=output.name),
+        context(session_id=output.name, job_id=output.name),
         phase("notebook"),
     ):
         _run_bounded(

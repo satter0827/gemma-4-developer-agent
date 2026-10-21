@@ -8,11 +8,10 @@ from typing import Any
 
 import yaml
 
-from gemma_agent_dev.common.artifacts import file_hash, new_run_id, write_json
+from gemma_agent_dev.common.artifacts import content_hash, file_hash, new_run_id, write_json
 from gemma_agent_dev.common.config import mapping, positive, project_path
 from gemma_agent_dev.common.events import LogSettings, logged
 from gemma_agent_dev.common.processes import command
-from gemma_agent_dev.evaluation.experiments import content_hash
 from gemma_agent_dev.evaluation.record_schema import EXTRA_FIELDS, validate_extra
 from gemma_agent_dev.tasks.catalog import checksum
 from gemma_agent_dev.tasks.pools import identifier, task_ids

@@ -31,6 +31,7 @@ def _run(root: Path, provenance: dict[str, Any], output: Path) -> None:
         "status": "running",
         "fingerprint": spec["fingerprint"],
         "provenance": provenance,
+        **provenance,
         "platform": platform.platform(),
         "python_version": platform.python_version(),
         "tasks_sha256": spec["tasks_sha256"],

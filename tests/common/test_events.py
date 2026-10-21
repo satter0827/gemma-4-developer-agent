@@ -81,7 +81,9 @@ def test_disk_failure_preserves_results_and_original_error(
 ) -> None:
     finished = []
     expected = RuntimeError("original") if original else None
-    with pytest.raises(RuntimeError if original else OSError) as raised:
+    from contextlib import nullcontext
+
+    with pytest.raises(RuntimeError) if original else nullcontext():
         with events.session(tmp_path, events.LogSettings.load(ROOT), "disk"):
             handler = logging.getLogger("gemma_agent_dev").handlers[0]
             assert isinstance(handler, events.EventHandler)
@@ -93,8 +95,7 @@ def test_disk_failure_preserves_results_and_original_error(
                 if expected:
                     raise expected
     assert finished == ["results_saved"]
-    if original:
-        assert raised.value is expected and "storage also failed" in raised.value.__notes__[0]
+    assert events.load_health(tmp_path) == {"status": "degraded", "reason_codes": ["event_write"]}
     assert capsys.readouterr().err.count("Cannot save") == 1
 
 
@@ -118,9 +119,8 @@ def test_inactive_and_invalid_events_and_bundle_policy(tmp_path: Path) -> None:
 def test_unstructured_messages_never_escape_on_formatter_failure(
     tmp_path: Path, capsys: Any
 ) -> None:
-    with pytest.raises(OSError):
-        with events.session(tmp_path, events.LogSettings.load(ROOT), "bad-log"):
-            logging.getLogger("gemma_agent_dev").warning("Authorization Bearer secret-content")
+    with events.session(tmp_path, events.LogSettings.load(ROOT), "bad-log"):
+        logging.getLogger("gemma_agent_dev").warning("Authorization Bearer secret-content")
     captured = capsys.readouterr()
     assert not captured.out and "secret-content" not in captured.err
     assert "raw message omitted" in captured.err
@@ -129,10 +129,9 @@ def test_unstructured_messages_never_escape_on_formatter_failure(
 def test_log_initialization_failure_is_safe(tmp_path: Path, capsys: Any) -> None:
     path = tmp_path / "file"
     path.write_text("existing")
-    with pytest.raises(OSError):
-        with events.session(path, events.LogSettings.load(ROOT), "init"):
-            raise AssertionError("must not start")
-    assert "Cannot initialize" in capsys.readouterr().err
+    with events.session(path, events.LogSettings.load(ROOT), "init") as health:
+        assert "initialization" in health.reason_codes
+    assert "Cannot save" in capsys.readouterr().err
 
 
 def test_child_process_receives_execution_id_and_separate_file(tmp_path: Path) -> None:
@@ -163,3 +162,37 @@ with session(Path(sys.argv[1]),settings,os.environ['GEMMA_EXECUTION_ID']):
     assert len(list(tmp_path.glob("*.jsonl"))) == 2
     assert {item["execution_id"] for item in data} == {"shared-run"}
     assert len({item["process_id"] for item in data}) == 2
+
+
+@pytest.mark.parametrize("fault", ["close", "status", "read", "malformed"])
+def test_health_storage_and_close_never_change_results(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any, fault: str
+) -> None:
+    if fault == "close":
+        original = events.EventHandler.close
+
+        def close(handler: Any) -> None:
+            original(handler)
+            raise OSError("secret")
+
+        monkeypatch.setattr(events.EventHandler, "close", close)
+    elif fault == "status":
+
+        def fail(*args: Any) -> None:
+            raise OSError("secret")
+
+        monkeypatch.setattr(events, "write_json", fail)
+    with events.session(tmp_path, events.LogSettings.load(ROOT), "health") as health:
+        events.event("health.completed")
+    if fault in {"close", "status"}:
+        assert health.as_dict()["status"] == "degraded"
+        assert capsys.readouterr().err.count("Cannot save") == 1
+    if fault == "read":
+        (tmp_path / "logging-status.json").unlink()
+        (tmp_path / "logging-status.json").mkdir()
+    elif fault == "malformed":
+        (tmp_path / "logging-status.json").write_text("{}")
+    if fault in {"read", "malformed"}:
+        assert events.load_health(tmp_path)["status"] == "degraded"
+    assert "secret" not in capsys.readouterr().err
+    assert events.load_health(tmp_path / "missing")["status"] == "unknown"

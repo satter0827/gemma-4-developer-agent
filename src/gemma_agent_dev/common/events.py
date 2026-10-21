@@ -12,15 +12,15 @@ import traceback
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from functools import wraps
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, TypeVar, cast
+from typing import Any, TypedDict, TypeVar, cast
 
-from gemma_agent_dev.common.artifacts import new_run_id
+from gemma_agent_dev.common.artifacts import new_run_id, write_json
 from gemma_agent_dev.common.config import mapping, positive
 
 CONTEXT: ContextVar[Mapping[str, Any]] = ContextVar("event_context", default=MappingProxyType({}))
@@ -28,6 +28,7 @@ ACTIVE: ContextVar[bool] = ContextVar("events_active", default=False)
 FIELDS = frozenset(
     {
         "execution_id",
+        "job_id",
         "experiment_id",
         "session_id",
         "task_id",
@@ -51,6 +52,57 @@ FIELDS = frozenset(
 LABEL = re.compile(r"[A-Za-z0-9_.:/-]+")
 LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR"})
 F = TypeVar("F", bound=Callable[..., Any])
+
+
+class LogStatus(TypedDict):
+    status: str
+    reason_codes: list[str]
+
+
+@dataclass
+class LogHealth:
+    reason_codes: set[str] = field(default_factory=set)
+    notified: bool = False
+
+    def fail(self, reason: str) -> None:
+        self.reason_codes.add(reason)
+        if not self.notified:
+            print("Cannot save execution logs; results and cleanup remain active", file=sys.stderr)
+            self.notified = True
+
+    def as_dict(self) -> LogStatus:
+        return {
+            "status": "degraded" if self.reason_codes else "ok",
+            "reason_codes": sorted(self.reason_codes),
+        }
+
+
+def save_health(directory: Path, health: LogHealth) -> None:
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        write_json(directory / "logging-status.json", health.as_dict())
+    except OSError:
+        health.fail("status_storage")
+
+
+def load_health(directory: Path) -> dict[str, Any]:
+    path = directory / "logging-status.json"
+    try:
+        value = json.loads(path.read_text())
+        if (
+            not isinstance(value, dict)
+            or set(value) != {"status", "reason_codes"}
+            or value["status"] not in {"ok", "degraded"}
+            or not isinstance(value["reason_codes"], list)
+            or any(not isinstance(v, str) or not LABEL.fullmatch(v) for v in value["reason_codes"])
+            or bool(value["reason_codes"]) != (value["status"] == "degraded")
+        ):
+            raise ValueError("Invalid logging health")
+        return dict(value)
+    except FileNotFoundError:
+        return {"status": "unknown", "reason_codes": []}
+    except (OSError, ValueError):
+        return {"status": "degraded", "reason_codes": ["status_unreadable"]}
 
 
 @dataclass(frozen=True)
@@ -121,17 +173,13 @@ class JsonFormatter(logging.Formatter):
 
 
 class EventHandler(RotatingFileHandler):
-    failure: OSError | None = None
+    health: LogHealth
 
     def handleError(self, record: logging.LogRecord) -> None:
-        if self.failure is None:
-            self.failure = OSError("Cannot save execution events")
-            print(
-                "Cannot save execution events; results and cleanup remain active", file=sys.stderr
-            )
+        self.health.fail("event_write")
 
     def emit(self, record: logging.LogRecord) -> None:
-        if self.failure is None:
+        if not self.health.reason_codes:
             super().emit(record)
 
 
@@ -164,10 +212,18 @@ def context(**fields: Any) -> Iterator[None]:
 
 
 @contextmanager
-def session(directory: Path, settings: LogSettings, execution_id: str) -> Iterator[None]:
+def session(
+    directory: Path,
+    settings: LogSettings,
+    execution_id: str,
+    *,
+    status_directory: Path | None = None,
+) -> Iterator[LogHealth]:
     checked({"execution_id": execution_id})
     logger = logging.getLogger("gemma_agent_dev")
     previous = logger.level, logger.propagate, list(logger.handlers)
+    health = LogHealth()
+    handler = None
     try:
         directory.mkdir(parents=True, exist_ok=True)
         handler = EventHandler(
@@ -177,38 +233,36 @@ def session(directory: Path, settings: LogSettings, execution_id: str) -> Iterat
             encoding="utf-8",
         )
     except OSError:
-        print("Cannot initialize execution event storage", file=sys.stderr)
-        raise
-    handler.setLevel(settings.file_level)
-    handler.setFormatter(JsonFormatter())
+        health.fail("initialization")
+    if handler is not None:
+        handler.health = health
+        handler.setLevel(settings.file_level)
+        handler.setFormatter(JsonFormatter())
     console = ConsoleHandler(sys.stderr)
     console.setLevel(settings.console_level)
     console.setFormatter(JsonFormatter())
-    logger.handlers = [handler, console]
-    logger.setLevel(min(handler.level, console.level))
+    logger.handlers = [handler, console] if handler else [console]
+    logger.setLevel(min(h.level for h in logger.handlers))
     logger.propagate = False
-    failure: BaseException | None = None
     active_token = ACTIVE.set(True)
     try:
         with context(execution_id=execution_id):
-            yield
-    except BaseException as error:
-        failure = error
-        raise
+            yield health
     finally:
         ACTIVE.reset(active_token)
         logger.setLevel(previous[0])
         logger.propagate = previous[1]
         logger.handlers = previous[2]
+        if handler is not None:
+            try:
+                handler.close()
+            except OSError:
+                health.fail("event_close")
         try:
-            handler.close()
+            console.close()
         except OSError:
-            handler.failure = OSError("Cannot close execution events")
-        console.close()
-        if handler.failure is not None:
-            if failure is None:
-                raise handler.failure
-            failure.add_note("Execution event storage also failed")
+            health.fail("console_close")
+        save_health(status_directory or directory, health)
 
 
 @contextmanager
@@ -246,8 +300,8 @@ def bundle_session(root: Path, output: Path, provenance: dict[str, Any]) -> Iter
         return
     settings = LogSettings.parse(json.loads(policy.read_text()))
     execution_id = os.environ.get("GEMMA_EXECUTION_ID") or new_run_id()
-    with session(output / "logs/events", settings, execution_id):
-        with context(**{k: provenance[k] for k in ("experiment_id",) if k in provenance}):
+    with session(output / "logs/events", settings, execution_id, status_directory=output):
+        with context(**{k: provenance[k] for k in ("experiment_id", "job_id") if k in provenance}):
             yield
 
 
@@ -260,5 +314,7 @@ def local_session(root: Path, output: Path) -> Iterator[None]:
     execution_id = (
         CONTEXT.get().get("execution_id") or os.environ.get("GEMMA_EXECUTION_ID") or new_run_id()
     )
-    with session(output / "logs/events", LogSettings.load(root), execution_id):
+    with session(
+        output / "logs/events", LogSettings.load(root), execution_id, status_directory=output
+    ):
         yield

@@ -23,7 +23,8 @@ def same_day(value: str, now: datetime) -> bool:
 
 
 def description(attempt: SubmissionAttempt) -> str:
-    return f"gemma-auto:{attempt['token']}:{attempt['candidate']}"
+    origin = "manual" if attempt.get("mode") == "manual" else "auto"
+    return f"gemma-{origin}:{attempt['token']}:{attempt['candidate']}"
 
 
 @logged("submission.sync")
@@ -74,7 +75,7 @@ def synchronize(
                 "status": remote["status"],
                 "score": score,
                 "content_id": identity,
-                "manual": attempt is None,
+                "manual": attempt is None or attempt.get("mode") == "manual",
             }
         )
     if not set(previous) <= seen:
@@ -85,9 +86,14 @@ def synchronize(
 
 @logged("submission.decide")
 def decide(
-    state: SubmissionState, settings: SubmissionSettings, limits: dict[str, int], now: datetime
+    state: SubmissionState,
+    settings: SubmissionSettings,
+    limits: dict[str, int],
+    now: datetime,
+    *,
+    candidate_id: str | None = None,
 ) -> tuple[Candidate | None, str]:
-    if not settings.send_window(now):
+    if not settings.send_window(now, manual=candidate_id is not None):
         return None, "outside_window"
     if any(a["status"] == "creating" for a in state["attempts"]):
         return None, "acceptance_unknown"
@@ -100,7 +106,7 @@ def decide(
         or max(today, accepted_today, limits["today"]) >= settings.daily_limit
     ):
         return None, "daily_limit"
-    if any(
+    if candidate_id is None and any(
         row["manual"] and now < timestamp(row["date"]) + timedelta(hours=settings.manual_hold_hours)
         for row in state["submissions"]
     ):
@@ -108,7 +114,14 @@ def decide(
     submitted = {row["content_id"] for row in state["submissions"]} | {
         a["candidate"] for a in state["attempts"] if a["status"] == "accepted"
     }
-    candidate = next((c for c in state["candidates"] if c["id"] not in submitted), None)
+    candidate = next(
+        (
+            c
+            for c in state["candidates"]
+            if c["id"] not in submitted and (candidate_id is None or c["id"] == candidate_id)
+        ),
+        None,
+    )
     return candidate, "ready" if candidate else "no_candidate"
 
 
@@ -139,11 +152,16 @@ def execute_run(
     mode: str,
     execute: bool,
     clock: Callable[[], datetime],
+    candidate_id: str | None = None,
 ) -> dict[str, Any]:
+    if (mode == "manual") != (candidate_id is not None):
+        raise ValueError("Manual submission requires an explicit candidate")
+    if candidate_id is not None and not any(c["id"] == candidate_id for c in state["candidates"]):
+        raise ValueError("Candidate is not registered")
     state = copy.deepcopy(state)
     now = clock()
     expired = now >= timestamp(settings.monitoring_end)
-    after_deadline = now >= timestamp(settings.competition_deadline)
+    after_deadline = now >= timestamp(settings.send_deadline)
     # Backup needs no API call if this UTC day's receipt is already durable.
     accepted_today = any(
         a["status"] == "accepted" and same_day(a["started_at"], now) for a in state["attempts"]
@@ -158,7 +176,7 @@ def execute_run(
     try:
         limits = synchronize(state, gateway, settings, now)
         active.discard(stage)
-        candidate, reason = decide(state, settings, limits, clock())
+        candidate, reason = decide(state, settings, limits, clock(), candidate_id=candidate_id)
         if mode == "monitor" or expired:
             candidate, reason = None, "monitoring_finished" if expired else "monitor_only"
         if candidate and execute:
@@ -177,7 +195,7 @@ def execute_run(
                 ):
                     raise ValueError("Archived submission checksum changed")
                 # Upload is separate from quota-consuming CreateSubmission.
-                if not settings.send_window(clock()):
+                if not settings.send_window(clock(), manual=mode == "manual"):
                     reason = "outside_window"
                 else:
                     uploaded = gateway.call("upload", execute=True, path=str(path))
@@ -185,7 +203,9 @@ def execute_run(
                     stage = "sync_failed"
                     limits = synchronize(state, gateway, settings, clock())
                     active.discard(stage)
-                    current, reason = decide(state, settings, limits, clock())
+                    current, reason = decide(
+                        state, settings, limits, clock(), candidate_id=candidate_id
+                    )
                     if current and current["id"] == candidate["id"]:
                         now = clock()
                         attempt: SubmissionAttempt = {
@@ -195,10 +215,12 @@ def execute_run(
                             "status": "creating",
                             "submission_id": None,
                         }
+                        if mode == "manual":
+                            attempt["mode"] = "manual"
                         stage = "acceptance_unknown"
                         state["attempts"].append(attempt)
                         store.save(state)  # A failed CAS prevents the remote call.
-                        if not settings.send_window(clock()):
+                        if not settings.send_window(clock(), manual=mode == "manual"):
                             attempt["status"], reason = "not_accepted", "outside_window"
                         else:
                             receipt = gateway.call(
@@ -206,7 +228,9 @@ def execute_run(
                                 execute=True,
                                 token=uploaded["token"],
                                 description=description(attempt),
-                                before=settings.create_before(now).isoformat(),
+                                before=settings.create_before(
+                                    now, manual=mode == "manual"
+                                ).isoformat(),
                                 utc_day=now.astimezone(UTC).date().isoformat(),
                             )
                             if receipt.get("expired"):
@@ -279,7 +303,7 @@ def resolve_attempt(state: SubmissionState, token: str, submission_id: int | Non
             or timestamp(row["date"]) < timestamp(attempt["started_at"])
         ):
             raise ValueError("Receipt does not match the unresolved candidate")
-        row["manual"] = False
+        row["manual"] = attempt.get("mode") == "manual"
     attempt["status"] = "accepted" if submission_id is not None else "not_accepted"
     attempt["submission_id"] = submission_id
     state["incidents"] = [item for item in state["incidents"] if item != "acceptance_unknown"]

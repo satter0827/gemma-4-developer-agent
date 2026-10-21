@@ -84,9 +84,12 @@ def task_status(run: Run, task: str) -> str:
 
 
 def run_status(run: Run) -> str:
+    from gemma_agent_dev.common.events import load_health
+
     if run.problems:
         return "要確認"
-    return {"completed": "完了", "running": "未完了", "failed": "失敗"}[run.manifest["status"]]
+    status = {"completed": "完了", "running": "未完了", "failed": "失敗"}[run.manifest["status"]]
+    return status + ("（ログ欠損）" if load_health(run.path)["status"] == "degraded" else "")
 
 
 def condition(run: Run, field: str) -> object:

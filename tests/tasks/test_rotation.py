@@ -70,6 +70,18 @@ def test_rotation_is_unused_first_and_independent_of_scores(planner: Any) -> Non
     assert first["historical_extrapolations"][0]["wall_seconds"] == 1600
 
 
+def test_started_task_without_a_saved_run_is_not_unused(planner: Any) -> None:
+    path, records = planner
+    task = rotation.plan(path.parent, path)["task_ids"][0]
+    records[0]["observations"].append(
+        {"task_id": task, "run_id": None, "status": "incomplete", "resolved": None}
+    )
+    next_plan = rotation.plan(path.parent, path)
+    assert task in next_plan["attempted"] and task not in next_plan["task_ids"]
+    assert next_plan["completed"] == ["rich_4"]
+    assert "requests_4" not in next_plan["attempted"]
+
+
 @pytest.mark.parametrize("damage", ["seed", "repos", "missing-repo", "count", "directory"])
 def test_rotation_rejects_invalid_or_exhausted_plans(planner: Any, damage: str) -> None:
     path, _ = planner

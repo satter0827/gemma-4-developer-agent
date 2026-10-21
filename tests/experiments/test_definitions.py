@@ -8,7 +8,8 @@ import yaml
 
 from gemma_agent_dev.candidates.archive import referenced_files
 from gemma_agent_dev.candidates.preflight import PreflightSettings
-from gemma_agent_dev.evaluation.experiments import Experiment, content_hash
+from gemma_agent_dev.common.artifacts import content_hash
+from gemma_agent_dev.evaluation.experiments import Experiment
 from gemma_agent_dev.tasks.pools import TaskPool, identifier, task_ids
 
 ROOT = Path(__file__).resolve().parents[2]

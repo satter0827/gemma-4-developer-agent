@@ -545,6 +545,31 @@ def test_cli_lifecycle_is_readonly_by_default(
     assert cli.main(registration) == 0 and (tmp_path / "capsule.json").is_file()
     store.loaded = empty_state(config["competition"])
     assert cli.main([*registration, "--execute"]) == 0
+    store.loaded = store.states[-1]
+    assert cli.main([*prefix, "submit", "--candidate", capsule["id"]]) == 0
+    assert "upload" not in api.calls
+    monkeypatch.setattr(submission_cli, "qualify_experiment", lambda *a: capsule)
+    paired = [
+        "register-experiment"
+        if x == "register"
+        else "--cpu-session"
+        if x == "--cpu-manifest"
+        else "--gpu-session"
+        if x == "--gpu-manifest"
+        else x
+        for x in registration
+    ]
+    paired += ["--variant", "workflow-skills-v1"]
+    assert cli.main(paired) == 0 and "kernel" in api.calls
+    api.fail = "kernel"
+    assert cli.main(paired) == 1
+    api.fail = None
+    other_archive = tmp_path / "other.zip"
+    with zipfile.ZipFile(other_archive, "w") as zipped:
+        zipped.writestr("agent.yaml", "name: changed\nmodel: synthetic\ninstruction: synthetic\n")
+    api.archive = other_archive
+    assert cli.main(paired) == 1
+    api.archive = archive
     store.loaded = None
     assert cli.main([*registration, "--execute"]) == 1
     assert "登録候補" in capsys.readouterr().out
@@ -572,6 +597,7 @@ def test_cli_lifecycle_is_readonly_by_default(
         {"monitoring_end": "2020-01-01T00:00:00Z"},
         {"seed_candidates": "not-a-list"},
         {"manual_hold_hours": 0},
+        {"send_deadline": "2026-12-03T09:00:00+09:00"},
     ],
 )
 def test_invalid_policy(tmp_path: Path, change: dict[str, Any]) -> None:
@@ -678,3 +704,105 @@ def test_monitor_success_does_not_resolve_candidate_failure(
         clock=lambda: NOW + timedelta(days=2),
     )
     assert submitted["reason"] == "accepted" and not submitted["incidents"]
+
+
+@pytest.mark.parametrize("execute", [False, True])
+def test_explicit_manual_submission_outside_morning_window(
+    settings: SubmissionSettings, candidate: tuple[Candidate, Path], execute: bool
+) -> None:
+    capsule, archive = candidate
+    state = empty_state(settings.competition)
+    state["candidates"].append(capsule)
+    gateway = FakeGateway(archive)
+    store = MemoryStore()
+    now = NOW + timedelta(hours=8)
+    assert not settings.send_window(now) and settings.send_window(now, manual=True)
+    value = execute_run(
+        state,
+        store,
+        gateway,
+        settings,
+        mode="manual",
+        execute=execute,
+        clock=lambda: now,
+        candidate_id=capsule["id"],
+    )
+    assert value["reason"] == ("accepted" if execute else "ready")
+    assert ("create" in gateway.calls) == execute
+    if execute:
+        saved = store.states[-1]
+        assert saved["attempts"][0]["mode"] == "manual"
+        assert description(saved["attempts"][0]).startswith("gemma-manual:")
+        validate_state(saved, settings.competition)
+        gateway.history = [
+            {
+                "id": 123,
+                "date": now.isoformat(),
+                "status": "PENDING",
+                "score": None,
+                "description": description(saved["attempts"][0]),
+            }
+        ]
+        synchronize(saved, gateway, settings, now)
+        assert saved["submissions"][0]["manual"]
+        gateway.limits = {"remaining": 1, "today": 0}
+        assert decide(saved, settings, gateway.limits, NOW + timedelta(days=1))[1] == "daily_limit"
+        assert (
+            decide(saved, settings, gateway.limits, now, candidate_id=capsule["id"])[1]
+            == "daily_limit"
+        )
+        from dataclasses import replace
+
+        wider = replace(settings, daily_limit=2)
+        assert decide(saved, wider, gateway.limits, NOW + timedelta(days=1))[1] == "manual_hold"
+        assert (
+            decide(saved, wider, gateway.limits, now, candidate_id=capsule["id"])[1]
+            == "no_candidate"
+        )
+
+
+@pytest.mark.parametrize("block", ["deadline", "unknown", "quota", "duplicate"])
+def test_manual_submission_keeps_common_safeguards(
+    settings: SubmissionSettings, candidate: tuple[Candidate, Path], block: str
+) -> None:
+    capsule, archive = candidate
+    state = empty_state(settings.competition)
+    state["candidates"].append(capsule)
+    gateway = FakeGateway(archive)
+    now = NOW + timedelta(hours=8)
+    if block in {"unknown", "duplicate"}:
+        state["attempts"].append(
+            {
+                "candidate": capsule["id"],
+                "token": "abc",
+                "started_at": now.isoformat(),
+                "status": "creating" if block == "unknown" else "accepted",
+                "submission_id": None if block == "unknown" else 123,
+            }
+        )
+    elif block == "quota":
+        gateway.limits["remaining"] = 0
+    else:
+        now = timestamp(settings.send_deadline)
+    value = execute_run(
+        state,
+        MemoryStore(),
+        gateway,
+        settings,
+        mode="manual",
+        execute=True,
+        clock=lambda: now,
+        candidate_id=capsule["id"],
+    )
+    assert (
+        value["reason"] != "accepted"
+        and "upload" not in gateway.calls
+        and "create" not in gateway.calls
+    )
+
+
+def test_manual_window_stops_at_operational_deadline(settings: SubmissionSettings) -> None:
+    cutoff = timestamp(settings.send_deadline)
+    assert settings.send_window(cutoff - timedelta(seconds=1), manual=True)
+    assert not settings.send_window(cutoff, manual=True)
+    assert settings.create_before(NOW, manual=True) == cutoff

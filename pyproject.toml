@@ -85,6 +85,7 @@ numeric_parameters = ["timeout", "startup_timeout", "max_bytes", "concurrency", 
 
 [tool.architecture.modules]
 core = [
+  "gemma_agent_dev.evaluation.experiment_results",
   "gemma_agent_dev.evaluation.optimization_limits",
   "gemma_agent_dev.evaluation.optimization_candidates",
   "gemma_agent_dev.candidates.changes",
@@ -146,7 +147,6 @@ local = [
   "gemma_agent_dev.tasks.rotation",
   "gemma_agent_dev.evaluation.experiment_records",
   "gemma_agent_dev.evaluation.experiment_preparation",
-  "gemma_agent_dev.evaluation.experiment_results",
   "gemma_agent_dev.evaluation.tracking",
   "gemma_agent_dev.notebooks.experiments",
   "gemma_agent_dev.candidates.preflight",
@@ -156,6 +156,7 @@ local = [
   "gemma_agent_dev.tasks.report",
 ]
 operations = [
+  "gemma_agent_dev.candidates.experiment_evidence",
   "gemma_agent_dev.candidates.evidence",
   "gemma_agent_dev.submission.service",
   "gemma_agent_dev.submission.store",

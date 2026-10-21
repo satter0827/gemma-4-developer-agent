@@ -1,13 +1,20 @@
 """Compare complete task pairs without turning missing evidence into failures."""
 
+import copy
 import json
 from pathlib import Path
 from typing import Any, TypedDict
 
 from gemma_agent_dev.candidates.changes import ChangeScope, validate_change
-from gemma_agent_dev.common.artifacts import file_hash, inventory
-from gemma_agent_dev.evaluation.analysis import implementation_changed, task_evidence
-from gemma_agent_dev.evaluation.experiments import content_hash
+from gemma_agent_dev.common.artifacts import content_hash, file_hash, inventory
+from gemma_agent_dev.common.events import load_health
+from gemma_agent_dev.evaluation.analysis import (
+    SCORABLE_TERMINATIONS,
+    implementation_changed,
+    task_evidence,
+    termination_reason,
+)
+from gemma_agent_dev.evaluation.control_evidence import verify_saved_controls
 from gemma_agent_dev.evaluation.results import (
     comparison_differences,
     load_run,
@@ -28,6 +35,25 @@ class TaskObservation(TypedDict):
     tool_argument_errors: int | None
 
 
+def validate_inputs(report: dict[str, Any]) -> None:
+    """New sessions bind observations to the actual frozen inputs and SDK contract."""
+    expected = copy.deepcopy(report["definition"]["runtime"])
+    actual = copy.deepcopy(report["runtime_config"])
+    expected["vllm"]["extra_args"] = ["--no-enable-prefix-caching"]
+    if report["control_engine"] == "native-python":
+        for field in ("data", "output"):
+            actual["paths"][field] = expected["paths"][field]
+    inputs = report["evidence_inputs"]
+    if (
+        expected != actual
+        or report["sdk_packages"] != expected["packages"]
+        or inputs["tasks_sha256"] != report["definition"]["pool"]["tasks_sha256"]
+        or set(inputs["snapshots"]) != set(report["task_ids"])
+        or set(inputs["sources"]) != set(report["task_ids"])
+    ):
+        raise ValueError("Session conditions differ from the frozen definition")
+
+
 def observation(
     run: Any, task: str, variant: str, max_bytes: int, *, attempted: bool = False
 ) -> TaskObservation:
@@ -45,23 +71,7 @@ def observation(
         }
     row = run.rows.get(task)
     evidence = task_evidence(run, task, max_bytes)
-    termination = next(
-        (
-            key
-            for key in (
-                "context_window_exceeded",
-                "time_limit_reached",
-                "tool_limit_reached",
-                "verification_timeout",
-            )
-            if evidence.get(key)
-        ),
-        "execution_error"
-        if row and row.get("error")
-        else "completed"
-        if run.complete
-        else "unknown",
-    )
+    termination = termination_reason(run, task, evidence)
     return {
         "task_id": task,
         "variant": variant,
@@ -90,6 +100,8 @@ def summarize(path: Path, *, max_bytes: int) -> dict[str, Any]:
             or definition["planned_order"] != planned
         ):
             raise ValueError("Session definition identity changed")
+        if "evidence_inputs" in session:
+            validate_inputs(session)
         candidate_files = session["candidate_files"]
         folders = {name: path.parent / "submissions" / name for name in session["variants"]}
         if "change" in definition:
@@ -137,7 +149,41 @@ def summarize(path: Path, *, max_bytes: int) -> dict[str, Any]:
             or run.manifest["submission_files"] != session["candidate_files"][cell["variant"]]
         ):
             raise ValueError("Cell experiment definition or files differ")
+        if "evidence_inputs" in session:
+            inputs = session["evidence_inputs"]
+            task = cell["task_id"]
+            manifest_inputs = {
+                "tasks_sha256": inputs["tasks_sha256"],
+                "snapshots": {task: inputs["snapshots"][task]},
+                "source_setup": {task: inputs["sources"][task]},
+                "runtime_config": session["runtime_config"],
+                "evaluation": definition["evaluation"],
+                "verification_timeout_seconds": definition["runtime"][
+                    "verification_timeout_seconds"
+                ],
+                "wheelhouse_hashes": definition["runtime"]["wheelhouse_hashes"],
+            }
+            if (
+                any(run.manifest.get(k) != v for k, v in manifest_inputs.items())
+                or any(
+                    run.manifest.get("dependencies", {}).get(k) != v
+                    for k, v in session["sdk_packages"].items()
+                )
+                or run.manifest.get("job_id") != session.get("job_id")
+            ):
+                raise ValueError("Cell inputs differ from the frozen session")
         cells[key] = run
+    observations = {
+        (task, variant): observation(
+            cells.get((task, variant)),
+            task,
+            variant,
+            max_bytes,
+            attempted={"task_id": task, "variant": variant} in session["actual_order"],
+        )
+        for task in tasks
+        for variant in variants
+    }
     counts = dict(
         both=0, baseline_only=0, candidate_only=0, neither=0, errors=0, incomplete=0, not_run=0
     )
@@ -155,7 +201,10 @@ def summarize(path: Path, *, max_bytes: int) -> dict[str, Any]:
             differences = comparison_differences(left, right)
             if set(differences) - {"submission_files"}:
                 raise ValueError(f"Paired execution conditions differ: {differences}")
-            if any(run.rows[task].get("error") for run in (left, right)):
+            if any(
+                observations[(task, variant)]["termination"] not in SCORABLE_TERMINATIONS
+                for variant in variants
+            ):
                 outcome = "errors"
             else:
                 a, b = (run.rows[task]["resolved"] for run in (left, right))
@@ -172,25 +221,37 @@ def summarize(path: Path, *, max_bytes: int) -> dict[str, Any]:
         rows.append({"task_id": task, "outcome": outcome})
     return {
         "experiment_id": session["experiment_id"],
+        "logging": load_health(path.parent),
         "status": session["status"],
         "variants": variants,
         "counts": counts,
         "tasks": rows,
         "formal_score": None,
         "cell_errors": sum(
-            not run.complete or bool(run.rows.get(task, {}).get("error"))
-            for (task, _), run in cells.items()
+            not run.complete or observations[key]["termination"] not in SCORABLE_TERMINATIONS
+            for key, run in cells.items()
         ),
-        "observations": [
-            observation(
-                cells.get((task, variant)),
-                task,
-                variant,
-                max_bytes,
-                attempted={"task_id": task, "variant": variant} in session["actual_order"],
-            )
-            for task in tasks
-            for variant in variants
-        ],
+        "observations": list(observations.values()),
         "quota_hours": session.get("quota_hours"),
     }
+
+
+def load_cpu(
+    path: Path, digest: str, definition_hash: str, task_ids: list[str], variants: dict[str, str]
+) -> dict[str, Any]:
+    report = json.loads(path.read_text())
+    if (
+        report.get("kind") != "experiment-verification"
+        or report.get("status") != "completed"
+        or report.get("source_sha256") != digest
+        or report.get("definition_sha256") != definition_hash
+        or report.get("task_ids") != task_ids
+        or report.get("variants") != variants
+        or set(report.get("controls", {})) != set(variants)
+    ):
+        raise ValueError("CPU proof does not match the complete experiment bundle")
+    if "evidence_inputs" in report:
+        validate_inputs(report)
+    for variant, files in report["controls"].items():
+        verify_saved_controls(path.parent / "controls" / variant, files, task_ids)
+    return dict(report)

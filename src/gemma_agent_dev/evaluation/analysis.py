@@ -10,6 +10,15 @@ from gemma_agent_dev.common.events import LABEL, context, event
 from gemma_agent_dev.evaluation.results import Run, comparison_differences, read_artifact
 
 EDIT_TOOLS = frozenset({"edit_file", "write_file"})
+SCORABLE_TERMINATIONS = frozenset(
+    {
+        "completed",
+        "time_limit_reached",
+        "tool_limit_reached",
+        "turn_limit_reached",
+        "context_window_exceeded",
+    }
+)
 LIMIT_PATTERNS = {
     "time_limit_reached": (
         r"\bagent (?:execution )?timed out\b|"
@@ -22,7 +31,32 @@ LIMIT_PATTERNS = {
     ),
     "verification_timeout": r"\bverification\b.*(?:timeout|timed out)",
     "context_window_exceeded": r"\bContextWindowExceededError\b",
+    "turn_limit_reached": (
+        r"\bLlmCallsLimitExceededError\b|\bMax number of llm calls limit\b.*\bexceeded\b"
+    ),
 }
+
+
+def termination_reason(run: Run, task: str, evidence: dict[str, Any]) -> str:
+    """Separate generation limits from grading and execution failures."""
+    return next(
+        (
+            key
+            for key in (
+                "context_window_exceeded",
+                "time_limit_reached",
+                "tool_limit_reached",
+                "turn_limit_reached",
+                "verification_timeout",
+            )
+            if evidence.get(key)
+        ),
+        "execution_error"
+        if run.rows.get(task, {}).get("error")
+        else "completed"
+        if run.complete
+        else "unknown",
+    )
 
 
 def emit_tool_events(run: Run, task_id: str, max_bytes: int) -> None:
@@ -180,7 +214,9 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
                         result["first_edit_attempt_trace_call"] = calls
                     arguments = call.get("arguments", {})
                     arguments = arguments if isinstance(arguments, dict) else {}
-                    target = arguments.get("file_path", arguments.get("path"))
+                    target = arguments.get(
+                        "filepath", arguments.get("file_path", arguments.get("path"))
+                    )
                     if not isinstance(target, str):
                         result["unknown_edit_targets"].append(calls)
                     elif re.search(r"(?:^|/)(?:repro|reproduce|scratch|tmp)[^/]*\.py$", target):

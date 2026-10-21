@@ -15,14 +15,19 @@ from gemma_agent_dev.candidates.preflight import (
     freeze_candidate,
     verify_quality,
 )
-from gemma_agent_dev.common.artifacts import file_hash, inventory, new_run_id, write_json
+from gemma_agent_dev.common.artifacts import (
+    content_hash,
+    file_hash,
+    inventory,
+    new_run_id,
+    write_json,
+)
 from gemma_agent_dev.common.config import mapping, positive, project_path
 from gemma_agent_dev.common.events import logged
 from gemma_agent_dev.common.processes import command
 from gemma_agent_dev.diagnostics.config import DiagnosticSettings
 from gemma_agent_dev.diagnostics.local import check_prepared, diagnose
 from gemma_agent_dev.evaluation.control_evidence import validate_control_set
-from gemma_agent_dev.evaluation.experiments import content_hash
 from gemma_agent_dev.evaluation.optimization import Optimization
 from gemma_agent_dev.tasks.catalog import checksum
 

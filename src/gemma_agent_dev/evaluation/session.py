@@ -5,6 +5,7 @@ import importlib.metadata
 import json
 import os
 import platform
+import shutil
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -240,6 +241,9 @@ def _run(
         "actual_order": [],
         "cells": [],
         "controls": {},
+        "runtime_config": runtime,
+        "evidence_inputs": {k: spec[k] for k in ("tasks_sha256", "snapshots", "sources")},
+        "sdk_packages": runtime["packages"],
         "control_engine": "native-python" if bindings else "official-sdk",
         "timings": {},
     }
@@ -259,6 +263,17 @@ def _run(
         ]:
             raise ValueError("Official SDK versions changed")
         submissions = prepare_candidates(root, output, spec, runtime)
+        report["candidate_archives"] = {}
+        for name, candidate in spec["variants"].items():
+            archive = output / "archives" / name / "submission.zip"
+            archive.parent.mkdir(parents=True)
+            shutil.copyfile(root / name / "submission.zip", archive)
+            report["candidate_archives"][name] = {
+                "path": archive.relative_to(output).as_posix(),
+                "sha256": file_hash(archive),
+            }
+            if report["candidate_archives"][name]["sha256"] != candidate["sha256"]:
+                raise ValueError("Archived experiment candidate changed")
         server = create_server(next(iter(submissions.values())), runtime)
         (output / "vllm.log").hardlink_to(server.log_path)
         if verify_only:

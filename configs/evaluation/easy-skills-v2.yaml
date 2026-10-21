@@ -1,0 +1,27 @@
+experiment_id: easy-skills-v2
+hypothesis: structured-test-verification
+pool: configs/tasks/easy.yaml
+diagnostic_config: configs/diagnostics/easy-rotation.yaml
+preflight_config: configs/evaluation/preflight-v2.yaml
+runtime_config: configs/evaluation/runtime.yaml
+evaluation_config: configs/evaluation/comparison.yaml
+variants:
+  workflow-v1: agent/workflow-v1.yaml
+  workflow-skills-v1: agent/workflow-skills-v1.yaml
+session:
+  job_timeout_seconds: 5400
+  cleanup_reserve_seconds: 300
+  per_evaluation_overhead_seconds: 60
+  enable_prefix_caching: false
+  quota_hours: 7
+  reserve_hours: 1
+  quota_per_wall_hour: 2
+  max_runs: 3
+change:
+  files:
+  - agent.yaml
+  - skills/python-verification-v1/SKILL.md
+  - skills/python-verification-v1/scripts/check.py
+  - skills/python-verification-v1/assets/policy.json
+  agent_fields:
+  - skills

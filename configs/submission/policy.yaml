@@ -4,6 +4,7 @@ timezone: Asia/Tokyo
 morning_start: '08:15'
 morning_cutoff: '08:55'
 competition_deadline: '2026-12-03T08:59:00+09:00'
+send_deadline: '2026-12-03T08:55:00+09:00'
 monitoring_end: '2026-12-04T20:15:00+09:00'
 manual_hold_hours: 24
 daily_limit: 1

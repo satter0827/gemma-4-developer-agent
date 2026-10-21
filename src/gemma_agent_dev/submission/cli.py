@@ -3,12 +3,14 @@
 import argparse
 import os
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from gemma_agent_dev.candidates.evidence import qualify_candidate
-from gemma_agent_dev.common.artifacts import write_json
+from gemma_agent_dev.candidates.evidence import archive_files, qualify_candidate
+from gemma_agent_dev.candidates.experiment_evidence import qualify_experiment
+from gemma_agent_dev.common.artifacts import file_hash, write_json
 from gemma_agent_dev.common.config import project_path
 from gemma_agent_dev.submission.api import KaggleGateway
 from gemma_agent_dev.submission.config import SubmissionSettings, timestamp
@@ -40,19 +42,37 @@ def configure(commands: Any) -> None:
         "--api-python", type=Path, help="Kaggle SDK環境のPython。省略時は実行中のPython"
     )
     actions = parser.add_subparsers(dest="submission_action", required=True)
-    for name in ("init", "sync", "plan", "run", "resolve", "register"):
+    for name in (
+        "init",
+        "sync",
+        "plan",
+        "run",
+        "resolve",
+        "register",
+        "register-experiment",
+        "submit",
+    ):
         action = actions.add_parser(name)
         action.add_argument("--execute", action="store_true", help="状態更新・提出を明示的に有効化")
         if name in {"plan", "run"}:
             action.add_argument(
                 "--mode", choices=("morning", "backup", "monitor"), default="morning"
             )
-        if name == "register":
-            for label in ("cpu-manifest", "gpu-manifest", "output"):
+        if name in {"register", "register-experiment"}:
+            inputs = (
+                ("cpu-session", "gpu-session")
+                if name == "register-experiment"
+                else ("cpu-manifest", "gpu-manifest")
+            )
+            for label in (*inputs, "output"):
                 action.add_argument(f"--{label}", type=Path, required=True)
             for label in ("owner", "kernel", "kernel-path"):
                 action.add_argument(f"--{label}", required=True)
             action.add_argument("--version", type=int, required=True)
+            if name == "register-experiment":
+                action.add_argument("--variant", required=True)
+        if name == "submit":
+            action.add_argument("--candidate", required=True)
         if name == "resolve":
             action.add_argument("--token", required=True)
             resolution = action.add_mutually_exclusive_group(required=True)
@@ -66,7 +86,7 @@ def summary(value: dict[str, Any], competition: str, *, execute: bool) -> str:
         "",
         REASONS[value["reason"]],
         "",
-        "実行：" + ("定時処理・状態更新あり" if execute else "未送信確認・状態更新なし"),
+        "実行：" + ("送信許可・状態更新あり" if execute else "未送信確認・状態更新なし"),
         "",
         "## 公開スコア上位の提出",
         "",
@@ -90,7 +110,7 @@ def summary(value: dict[str, Any], competition: str, *, execute: bool) -> str:
 
 def run(root: Path, args: argparse.Namespace) -> int:
     settings = SubmissionSettings.load(root, args.config)
-    execute = args.execute and args.submission_action == "run"
+    execute = args.execute and args.submission_action in {"run", "submit"}
     # Publish the stop signal before Git/API operations, including when state loading fails.
     if execute and datetime.now(UTC) >= timestamp(settings.monitoring_end):
         if output := os.environ.get("GITHUB_OUTPUT"):
@@ -100,18 +120,41 @@ def run(root: Path, args: argparse.Namespace) -> int:
     store = StateStore(
         root, settings.state_branch, settings.competition, settings.api_timeout_seconds
     )
-    if args.submission_action == "register":
-        candidate = qualify_candidate(
-            project_path(root, str(args.cpu_manifest)),
-            project_path(root, str(args.gpu_manifest)),
-            {
-                "owner": args.owner,
-                "kernel": args.kernel,
-                "version": args.version,
-                "path": args.kernel_path,
-            },
-            settings.max_archive_bytes,
-        )
+    if args.submission_action in {"register", "register-experiment"}:
+        source = {
+            "owner": args.owner,
+            "kernel": args.kernel,
+            "version": args.version,
+            "path": args.kernel_path,
+        }
+        if args.submission_action == "register-experiment":
+            candidate = qualify_experiment(
+                project_path(root, str(args.cpu_session)),
+                project_path(root, str(args.gpu_session)),
+                args.variant,
+                source,
+                settings.max_archive_bytes,
+            )
+            with tempfile.TemporaryDirectory() as directory:
+                archive = Path(directory) / "submission.zip"
+                gateway.call(
+                    "kernel",
+                    source=candidate["source"],
+                    destination=str(archive),
+                    max_bytes=settings.max_archive_bytes,
+                )
+                if (
+                    file_hash(archive) != candidate["archive_sha256"]
+                    or archive_files(archive, settings.max_archive_bytes) != candidate["files"]
+                ):
+                    raise ValueError("Saved Notebook archive differs from the qualified candidate")
+        else:
+            candidate = qualify_candidate(
+                project_path(root, str(args.cpu_manifest)),
+                project_path(root, str(args.gpu_manifest)),
+                source,
+                settings.max_archive_bytes,
+            )
         path = project_path(root, str(args.output))
         path.parent.mkdir(parents=True, exist_ok=True)
         write_json(path, candidate)
@@ -153,9 +196,10 @@ def run(root: Path, args: argparse.Namespace) -> int:
         store,
         gateway,
         settings,
-        mode=args.mode,
+        mode="manual" if args.submission_action == "submit" else args.mode,
         execute=execute,
         clock=lambda: datetime.now(UTC),
+        candidate_id=args.candidate if args.submission_action == "submit" else None,
     )
     rendered = summary(value, settings.competition, execute=execute)
     print(rendered)

@@ -11,12 +11,11 @@ from typing import Any
 
 from gemma_agent_dev.candidates.archive import extract_archive
 from gemma_agent_dev.candidates.preflight import artifact_limit
-from gemma_agent_dev.common.artifacts import file_hash, inventory, write_json
+from gemma_agent_dev.common.artifacts import content_hash, file_hash, inventory, write_json
 from gemma_agent_dev.common.processes import command
 from gemma_agent_dev.common.sources import OPTIMIZATION_MODULES
 from gemma_agent_dev.diagnostics.config import DiagnosticSettings
 from gemma_agent_dev.evaluation.control_evidence import verify_saved_controls
-from gemma_agent_dev.evaluation.experiments import content_hash
 from gemma_agent_dev.evaluation.optimization_limits import SearchLimits
 from gemma_agent_dev.evaluation.optimization_preparation import GepaEnvironment, load_preparation
 from gemma_agent_dev.evaluation.sdk_checks import fingerprint, installed_state

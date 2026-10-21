@@ -15,7 +15,12 @@ from gemma_agent_dev.candidates.archive import extract_archive
 from gemma_agent_dev.common.artifacts import file_hash, inventory, new_run_id, write_json
 from gemma_agent_dev.common.events import bundle_session, context, event, phase
 from gemma_agent_dev.common.processes import command
-from gemma_agent_dev.evaluation.analysis import implementation_changed, task_evidence
+from gemma_agent_dev.evaluation.analysis import (
+    SCORABLE_TERMINATIONS,
+    implementation_changed,
+    task_evidence,
+    termination_reason,
+)
 from gemma_agent_dev.evaluation.control_evidence import copy_native_controls
 from gemma_agent_dev.evaluation.optimization_candidates import FrozenSearchCandidate, freeze
 from gemma_agent_dev.evaluation.optimization_engine import search
@@ -326,19 +331,8 @@ def execute(
             saved = load_run(folder)
             row = saved.rows[task]
             evidence = task_evidence(saved, task, spec["max_artifact_bytes"])
-            termination = next(
-                (
-                    key
-                    for key in (
-                        "time_limit_reached",
-                        "tool_limit_reached",
-                        "context_window_exceeded",
-                    )
-                    if evidence.get(key)
-                ),
-                "completed",
-            )
-            if not saved.complete or row.get("error") and termination == "completed":
+            termination = termination_reason(saved, task, evidence)
+            if not saved.complete or termination not in SCORABLE_TERMINATIONS:
                 raise RuntimeError("Official evaluation failed or did not complete")
             return {
                 "resolved": row["resolved"],

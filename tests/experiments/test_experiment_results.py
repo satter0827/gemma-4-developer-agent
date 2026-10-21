@@ -130,3 +130,25 @@ def test_changed_or_incomparable_evidence_is_rejected(paired_run: Path, damage: 
     write_json(paired_run, data)
     with pytest.raises((ValueError, KeyError)):
         summarize(paired_run, max_bytes=2000000)
+
+
+@pytest.mark.parametrize(
+    "error,termination,invalid",
+    [
+        ("Agent exceeded session timeout (5 min)", "time_limit_reached", False),
+        ("Agent exceeded tool call budget (30 calls)", "tool_limit_reached", False),
+        ("ContextWindowExceededError: limit reached", "context_window_exceeded", False),
+        ("Max number of llm calls limit of `50` exceeded", "turn_limit_reached", False),
+        ("Verification timed out", "verification_timeout", True),
+        ("Sandbox execution error", "execution_error", True),
+    ],
+)
+def test_generation_limits_remain_official_unsolved_results(
+    paired_run: Path, error: str, termination: str, invalid: bool
+) -> None:
+    update_outcome(paired_run, "base", resolved=False, error=error)
+    summary = summarize(paired_run, max_bytes=2000000)
+    assert summary["observations"][0]["termination"] == termination
+    assert summary["observations"][0]["resolved"] is False
+    assert summary["counts"]["errors" if invalid else "candidate_only"] == 1
+    assert summary["cell_errors"] == int(invalid)

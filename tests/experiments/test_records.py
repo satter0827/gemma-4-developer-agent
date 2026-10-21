@@ -250,3 +250,35 @@ def test_reviewed_export_uses_frozen_numbers_and_path_specific_prompts(
     write_json(session, sealed)
     with pytest.raises(ValueError, match="definition"):
         records.export(tmp_path, session, review, Path("record.json"), 1000)
+
+
+@pytest.mark.parametrize(
+    "termination,invalid",
+    [
+        ("time_limit_reached", False),
+        ("tool_limit_reached", False),
+        ("turn_limit_reached", False),
+        ("context_window_exceeded", False),
+        ("verification_timeout", True),
+        ("execution_error", True),
+    ],
+)
+def test_public_aggregates_use_the_same_execution_classification(
+    record: dict[str, Any], termination: str, invalid: bool
+) -> None:
+    record["task_ids"] = record["task_ids"][:1]
+    record["observations"] = [
+        observed(record["task_ids"][0], name) for name in record["candidate_hashes"]
+    ]
+    record["observations"][0]["termination"] = termination
+    record["observations"][1]["resolved"] = True
+    record["metrics"] = dict(
+        both=0,
+        baseline_only=0,
+        candidate_only=int(not invalid),
+        neither=0,
+        errors=int(invalid),
+        incomplete=0,
+        not_run=0,
+    )
+    validate_extra(record)

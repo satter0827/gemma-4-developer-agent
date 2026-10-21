@@ -39,7 +39,7 @@ def plan(root: Path, config: Path) -> dict[str, Any]:
         raise ValueError("Missing public experiment record directory")
     records = load_records(root, sorted(record_dir.glob("*.json")))
     observations = [item for record in records for item in record.get("observations", [])]
-    attempted = {r["task_id"] for r in observations if r["run_id"] is not None}
+    attempted = {r["task_id"] for r in observations if r["status"] != "not_run"}
     completed = {r["task_id"] for r in observations if r["status"] == "completed"}
     reserved = {
         task

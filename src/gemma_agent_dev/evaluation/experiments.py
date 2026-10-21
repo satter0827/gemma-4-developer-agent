@@ -1,7 +1,5 @@
 """Validate immutable experiments and deterministic paired execution plans."""
 
-import hashlib
-import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -15,12 +13,6 @@ from gemma_agent_dev.common.config import mapping, project_path
 from gemma_agent_dev.evaluation.config import EvaluationSettings, RuntimeSettings
 from gemma_agent_dev.evaluation.session_policy import VARIANTS_PER_PAIR, SessionPolicy
 from gemma_agent_dev.tasks.pools import TaskPool, identifier
-
-
-def content_hash(value: Any) -> str:
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
 
 
 @dataclass(frozen=True)

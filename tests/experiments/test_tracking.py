@@ -323,7 +323,8 @@ def test_experiment_conditions_are_immutable_across_record_ids(
 def test_git_records_are_valid_without_mlflow_or_competition_data() -> None:
     paths = sorted((ROOT / "docs/records/experiments").glob("*.json"))
     rows = tracking.load_records(ROOT, paths)
-    from gemma_agent_dev.evaluation.experiments import Experiment, content_hash
+    from gemma_agent_dev.common.artifacts import content_hash
+    from gemma_agent_dev.evaluation.experiments import Experiment
 
     for row in rows:
         if row.get("record_schema_version") == 2:
