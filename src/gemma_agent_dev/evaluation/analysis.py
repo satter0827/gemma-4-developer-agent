@@ -80,6 +80,11 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
         "individual_test_counts": None,
         "official_tool_calls": row.get("tool_calls") if row else None,
         "first_edit_attempt_trace_call": None,
+        "first_implementation_edit_trace_call": None,
+        "scratch_edit_attempts": [],
+        "unknown_edit_targets": [],
+        "tool_argument_errors": [],
+        "stage_authors": [],
         "reported_patch_submissions": [],
         "edit_failures": [],
         "verification_commands": [],
@@ -110,6 +115,9 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
             if len(step_calls) > 1:
                 result["ambiguous_tool_observations"] = True
                 observed = {}
+            author = step.get("extra", {}).get("author")
+            if author and author not in result["stage_authors"]:
+                result["stage_authors"].append(author)
             for call in step_calls:
                 calls += 1
                 name = call["function_name"]
@@ -120,13 +128,37 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
                 if name in EDIT_TOOLS:
                     if result["first_edit_attempt_trace_call"] is None:
                         result["first_edit_attempt_trace_call"] = calls
-                    if observed.get("status") == "error":
+                    arguments = call.get("arguments", {})
+                    arguments = arguments if isinstance(arguments, dict) else {}
+                    target = arguments.get("file_path", arguments.get("path"))
+                    if not isinstance(target, str):
+                        result["unknown_edit_targets"].append(calls)
+                    elif re.search(r"(?:^|/)(?:repro|reproduce|scratch|tmp)[^/]*\.py$", target):
+                        result["scratch_edit_attempts"].append(calls)
+                    elif target.endswith(".py") and not re.search(
+                        r"(?:^|/)(?:tests?/|test_)", target
+                    ):
+                        if result["first_implementation_edit_trace_call"] is None:
+                            result["first_implementation_edit_trace_call"] = calls
+                    else:
+                        result["unknown_edit_targets"].append(calls)
+                    if observed.get("status") == "error" or observed.get("error"):
                         result["edit_failures"].append({"call": calls, "observation": observed})
-                command = call.get("arguments", {}).get("command")
+                tool_error = observed.get("error") or observed.get("error_message")
+                if tool_error and re.search(
+                    r"argument|parameter|required|validation", str(tool_error), re.I
+                ):
+                    result["tool_argument_errors"].append(
+                        {"call": calls, "tool": name, "observation": observed}
+                    )
+                arguments = call.get("arguments", {})
+                command = arguments.get("command") if isinstance(arguments, dict) else None
                 if (
                     name == "run_command"
                     and isinstance(command, str)
-                    and re.search(r"\bpytest\b|\bunittest\b|\bassert\b", command)
+                    and re.search(
+                        r"\bpytest\b|\bunittest\b|\bassert\b|\bpython[\d.]*\s+\S+\.py\b", command
+                    )
                 ):
                     result["verification_commands"].append(
                         {

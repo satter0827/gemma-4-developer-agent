@@ -10,7 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from gemma_agent_dev.common.artifacts import file_hash, write_json
-from gemma_agent_dev.diagnostics.origins import test_environment, validate_origins
+from gemma_agent_dev.diagnostics.origins import (
+    HOST_DISPLAY_VARIABLES,
+    test_environment,
+    validate_origins,
+)
 
 
 def observe_sources(
@@ -75,7 +79,7 @@ def observe_sources(
         invoked = command
         if state is not None:
             prefix = "export " + " ".join(f"{k}={shlex.quote(v)}" for k, v in state[0].items())
-            invoked = prefix + "; " + command
+            invoked = "unset " + " ".join(HOST_DISPLAY_VARIABLES) + "; " + prefix + "; " + command
         junit = re.search(r"--junitxml=(/tmp/_swegemma_junit_[a-f0-9]+\.xml)", command)
         if junit:
             # An absent hook must never reuse evidence from an earlier test command.

@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-from gemma_agent_dev.common.artifacts import inventory
+from gemma_agent_dev.common.artifacts import file_hash, inventory
 
 ZIP_MODE_SHIFT = 16
 
@@ -53,13 +53,25 @@ def validate_references(root: Path) -> dict[str, str]:
         for name in files
     ):
         raise ValueError("Unexpected file in submission")
+    referenced_files(root, root / "agent.yaml")
+    return files
+
+
+def referenced_files(root: Path, entry: Path) -> dict[str, str]:
+    """Resolve only the selected agent's transitive inputs inside its source tree."""
+    root = root.resolve()
     active: set[Path] = set()
     complete: set[Path] = set()
+    references: set[Path] = set()
+
+    def checked(path: Path) -> Path:
+        if path.is_symlink() or not path.resolve().is_relative_to(root) or not path.is_file():
+            raise ValueError(f"Missing or external submission reference: {path.name}")
+        references.add(path.resolve())
+        return path.resolve()
 
     def load(path: Path) -> Any:
-        path = path.resolve()
-        if not path.is_relative_to(root.resolve()) or not path.is_file():
-            raise ValueError(f"Missing or external submission reference: {path.name}")
+        path = checked(path)
         if path in active:
             raise ValueError(f"Cyclic submission reference: {path.name}")
         active.add(path)
@@ -72,9 +84,7 @@ def validate_references(root: Path) -> dict[str, str]:
                 referenced = path.parent / loader.construct_scalar(node)
                 if referenced.suffix in {".yaml", ".yml"}:
                     return load(referenced)
-                referenced = referenced.resolve()
-                if not referenced.is_relative_to(root.resolve()) or not referenced.is_file():
-                    raise ValueError("Missing or external include")
+                referenced = checked(referenced)
                 return referenced.read_text(encoding="utf-8")
 
             Loader.add_constructor("!include", include)
@@ -99,8 +109,5 @@ def validate_references(root: Path) -> dict[str, str]:
         finally:
             active.remove(path)
 
-    for name in files:
-        path = root / name
-        if path.suffix in {".yaml", ".yml"} and path.resolve() not in complete:
-            load(path)
-    return files
+    load(entry)
+    return {p.relative_to(root).as_posix(): file_hash(p) for p in sorted(references)}

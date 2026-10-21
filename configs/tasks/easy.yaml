@@ -1,0 +1,64 @@
+pool_id: easy-v1
+difficulty: Easy
+tasks_sha256: e4b3fd60f69dbc2b9213e54eeb9636db78aefe92c1d06269d73d9f5f8f3c8ad6
+sdk_version: 0.2.11
+tuning:
+- fastapi_12942
+- fastapi_14258
+- fastapi_14297
+- fastapi_14356
+- fastapi_14360
+- fastapi_14463
+- fastapi_14479
+- fastapi_14616
+- fastapi_14786
+- fastapi_14791
+- fastapi_14873
+- fastapi_15588
+- fastapi_5077
+- fastapi_9425
+- requests_6589
+- requests_6592
+- requests_7205
+- requests_7309
+- requests_7315
+- requests_7328
+- requests_7433
+- rich_2725
+- rich_2943
+- rich_3006
+- rich_3043
+- rich_3052
+- rich_3067
+- rich_3130
+- rich_3278
+- rich_3296
+- rich_3454
+- rich_3471
+- rich_3480
+- rich_3905
+- rich_3944
+- rich_4077
+confirmation:
+- fastapi_13537
+- fastapi_15589
+- fastapi_14492
+- fastapi_14303
+- fastapi_14487
+- rich_3882
+- rich_3894
+- rich_3518
+- rich_3105
+- rich_3718
+- requests_6644
+- requests_6629
+uses:
+- experiment_id: easy-sequential-v1
+  purpose: tuning
+  task_ids:
+  - fastapi_14873
+  - fastapi_14479
+  - requests_7328
+  - requests_7433
+  - rich_3130
+  - rich_3278

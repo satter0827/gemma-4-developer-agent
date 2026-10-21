@@ -18,7 +18,11 @@ from gemma_agent_dev.common.artifacts import file_hash, inventory, new_run_id, w
 from gemma_agent_dev.common.junit import diagnostic_evidence
 from gemma_agent_dev.common.processes import command, process_group
 from gemma_agent_dev.diagnostics.config import DiagnosticSettings, DiagnosticTask
-from gemma_agent_dev.diagnostics.origins import test_environment, validate_origins
+from gemma_agent_dev.diagnostics.origins import (
+    HOST_DISPLAY_VARIABLES,
+    test_environment,
+    validate_origins,
+)
 from gemma_agent_dev.tasks.catalog import TaskCatalog
 
 
@@ -48,7 +52,13 @@ def environment(settings: DiagnosticSettings) -> dict[str, str]:
         "PYTHONPYCACHEPREFIX": str(settings.root / "artifacts/cache/task-python"),
         "PYTHONNOUSERSITE": "1",
     }
-    for key in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTHONHOME", "PYTHONPATH"):
+    for key in (
+        "PYTEST_ADDOPTS",
+        "PYTEST_PLUGINS",
+        "PYTHONHOME",
+        "PYTHONPATH",
+        *HOST_DISPLAY_VARIABLES,
+    ):
         result.pop(key, None)
     return result
 
@@ -172,6 +182,22 @@ def prepare(settings: DiagnosticSettings) -> Path:
             env=environment(settings),
             timeout=settings.timeout_seconds,
         )
+        if task.dependency_wheels:
+            command(
+                [
+                    "uv",
+                    "pip",
+                    "install",
+                    "--python",
+                    str(python),
+                    "--no-index",
+                    "--no-deps",
+                    *[str(catalog.wheel_cache / name) for name in task.dependency_wheels],
+                ],
+                cwd=settings.root,
+                env=environment(settings),
+                timeout=settings.timeout_seconds,
+            )
         manifest["environments"][task.instance_id] = installed_environment(python, settings)
     destination = settings.cache_dir / "prepared.json"
     write_json(destination, manifest)
@@ -243,6 +269,7 @@ def run_case(
     record: dict[str, Any] = {
         "task_id": task.instance_id,
         "case": name,
+        "excluded_display_environment": list(HOST_DISPLAY_VARIABLES),
         "expected_pass": expected == "passed",
         "expected_outcome": expected,
         "patch_sha256": digest_text(patch),

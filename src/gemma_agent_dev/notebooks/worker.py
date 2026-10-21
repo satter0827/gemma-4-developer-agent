@@ -45,7 +45,14 @@ def run_bounded(
                 str(int(diagnostic)),
             ]
             with process_group(
-                args, cwd=root, env={**os.environ, "PYTHONPATH": str(root / "src")}, stdout=log
+                args,
+                cwd=root,
+                env={
+                    **os.environ,
+                    "PYTHONPATH": str(root / "src"),
+                    "GEMMA_JOB_DEADLINE_MONOTONIC": str(start + timeout),
+                },
+                stdout=log,
             ) as process:
                 while True:
                     remaining = timeout - (time.monotonic() - start)
@@ -65,7 +72,9 @@ def run_bounded(
         failure = error
         receipt.update(status="failed", error=f"{type(error).__name__}: {error}")
         try:
-            for path in (storage / "results").glob("*/manifest.json"):
+            for path in list((storage / "results").rglob("manifest.json")) + list(
+                (storage / "results").rglob("session.json")
+            ):
                 manifest = json.loads(path.read_text())
                 if (
                     manifest.get("status") == "running"
@@ -93,6 +102,10 @@ def main() -> None:
     provenance = json.loads(sys.argv[2])
     if bool(int(sys.argv[-1])):
         importlib.import_module("gemma_agent_dev.diagnostics.remote").run(root, provenance)
+    elif (root / "experiment.json").is_file():
+        importlib.import_module("gemma_agent_dev.evaluation.session").run(
+            root, provenance, verify_only=bool(int(sys.argv[-2]))
+        )
     else:
         importlib.import_module("gemma_agent_dev.evaluation.runtime").run(
             root, provenance, verify_only=bool(int(sys.argv[-2]))

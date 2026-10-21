@@ -1,0 +1,18 @@
+name: verify_agent
+model: gemma-4-31b-it-qat-w4a16-ct
+adapter: main_lora
+instruction: !include ../prompts/verify-v1.md
+tools:
+- run_command
+- read_file
+- edit_file
+- write_file
+- get_status
+- get_code_neighbors
+- search_similar_code
+- get_code_subgraph
+- submit_patch
+disallow_transfer_to_parent: true
+disallow_transfer_to_peers: true
+include_contents: none
+generate_content_config: !include ../configs/sampling.yaml

@@ -1,0 +1,8 @@
+requirements: configs/environments/mlflow.in
+lock_file: configs/environments/mlflow.lock
+environment: artifacts/mlflow-env
+database: artifacts/mlflow/tracking.db
+output_dir: artifacts/mlflow-checks
+python_version: '3.12'
+timeout_seconds: 600
+experiment_name: gemma-easy

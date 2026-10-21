@@ -1,0 +1,51 @@
+{
+  "record_id": "easy-sequential-cpu-v1",
+  "experiment_id": "easy-sequential-v1",
+  "hypothesis": "independent-public-api-verification",
+  "status": "cpu-verified",
+  "task_ids": [
+    "fastapi_14873",
+    "fastapi_14479",
+    "requests_7328",
+    "requests_7433",
+    "rich_3130",
+    "rich_3278"
+  ],
+  "definition_sha256": "a6aaae2482beb304903c4b99fa922b0e7afde937670d1654631b48f8d709af66",
+  "source_sha256": "7695ecabf256a8f79d5f0eaf03d5e98329d2c503fe1d7cb1bff667d9ab711e41",
+  "candidate_hashes": {
+    "workflow-v1": "411737ddf6b8f774a6edc6825bafa3f7498b121c7bb86c43021eae066f984dfa",
+    "sequential-v1": "f5ac89a2436c316acfceb722b43497d0bf0992bea271e139a02d32d19bf41511"
+  },
+  "metrics": {
+    "native_controls_matched": 12,
+    "native_unmodified_unresolved": 6,
+    "native_reference_resolved": 6,
+    "sdk_stages": 2,
+    "synthetic_verification_checks": 2,
+    "gpu_evaluations": 0
+  },
+  "interpretation": "6課題の対照検証と逐次構成のSDK契約を確認。モデルによる解決率は未評価。",
+  "prompts": [
+    {
+      "prompt_id": "workflow-v1",
+      "path": "agent/prompts/workflow.md",
+      "sha256": "6ec9796d3388e5e08131dbfbbe4636787938f8f73730d583f2c8814f8a32f1d9"
+    },
+    {
+      "prompt_id": "analyzer-v1",
+      "path": "agent/prompts/analyzer.md",
+      "sha256": "967d1515469930ba9b0264948c9505d0a725bdcabc2d1be8d91a8e3c6a66da29"
+    },
+    {
+      "prompt_id": "repair-v1",
+      "path": "agent/prompts/repair-v1.md",
+      "sha256": "9b7758c1bceabf44905f33b46239191343a02ccc33ac5133fe3c533b6f271610"
+    },
+    {
+      "prompt_id": "verify-v1",
+      "path": "agent/prompts/verify-v1.md",
+      "sha256": "c4a4bc1ff2318c8a533f42b63bee0d47159987ae7ec8fb513e01bdc9ec8ea422"
+    }
+  ]
+}

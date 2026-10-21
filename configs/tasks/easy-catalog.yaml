@@ -1,0 +1,60 @@
+tasks_file: artifacts/reference/tasks.jsonl
+tasks_sha256: e4b3fd60f69dbc2b9213e54eeb9636db78aefe92c1d06269d73d9f5f8f3c8ad6
+tasks:
+- instance_id: fastapi_14873
+  snapshot_sha256: 58cf6e48c2e243643ac5c6424902d34781a83f2dff918363f8d152bb60e3c0fb
+  test_paths:
+  - tests/test_router_events.py
+  source_roots: &id001
+  - .
+  import_modules: &id002
+  - fastapi
+  dependency_wheels: &id003
+    dirty_equals-0.11-py3-none-any.whl: b1d7093273fc2f9be12f443a8ead954ef6daaf6746fd42ef3a5616433ee85286
+- instance_id: fastapi_14479
+  snapshot_sha256: 24f21d72321d3dc6e7a6258e4bee0ffd169d0b449f518a0c72fd141b6989c0b8
+  test_paths:
+  - tests/test_invalid_sequence_param.py
+  source_roots: *id001
+  import_modules: *id002
+  dependency_wheels: *id003
+- instance_id: requests_7328
+  snapshot_sha256: 47f35331fd2dc1d976eeb2aeff5f8aa376cd005911bf35ce164161931a97d8c9
+  test_paths:
+  - tests/test_requests.py
+  source_roots:
+  - src
+  - .
+  import_modules:
+  - requests
+  dependency_wheels: {}
+- instance_id: requests_7433
+  snapshot_sha256: 96292b6471c5f428feedcbf65a013c234ac9e2a0ced8b802d7450720ba9d22f3
+  test_paths:
+  - tests/test_requests.py
+  source_roots:
+  - src
+  - .
+  import_modules:
+  - requests
+  dependency_wheels: {}
+- instance_id: rich_3130
+  snapshot_sha256: 208ec211fdb8819f192660f95d8476ffb43e4de5c068facc7430664306738536
+  test_paths:
+  - tests/test_markdown.py
+  source_roots:
+  - .
+  import_modules:
+  - rich
+  dependency_wheels:
+    Pygments-2.15.1-py3-none-any.whl: db2db3deb4b4179f399a09054b023b6a586b76499d36965813c71aa8ed7b5fd1
+- instance_id: rich_3278
+  snapshot_sha256: bda96e09e9e02fa372b2cf6c5f3f2760f97d292fb531cc631564632940d6a453
+  test_paths:
+  - tests/test_ansi.py
+  source_roots:
+  - .
+  import_modules:
+  - rich
+  dependency_wheels: {}
+wheel_cache: artifacts/reference/task-wheels
