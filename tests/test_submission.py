@@ -482,6 +482,9 @@ def test_cli_lifecycle_is_readonly_by_default(
     monkeypatch.setattr(cli, "project_root", lambda: tmp_path)
     monkeypatch.setattr(submission_cli, "StateStore", lambda *a: store)
     monkeypatch.setattr(submission_cli, "KaggleGateway", lambda *a: api)
+    monkeypatch.setattr(
+        submission_cli, "datetime", type("Clock", (), {"now": staticmethod(lambda _: NOW)})
+    )
     prefix = ["submission", "--config", "submission.yaml"]
     assert cli.main([*prefix, "init"]) == 0 and not store.states
     assert cli.main([*prefix, "plan"]) == 1  # state must be initialized explicitly
