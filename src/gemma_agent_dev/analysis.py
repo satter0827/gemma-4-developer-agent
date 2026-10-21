@@ -20,6 +20,7 @@ LIMIT_PATTERNS = {
         r"tool.?call.*(?:budget|limit).*(?:exceeded|exhausted|reached)"
     ),
     "verification_timeout": r"\bverification\b.*(?:timeout|timed out)",
+    "context_window_exceeded": r"\bContextWindowExceededError\b",
 }
 TEST_STATUSES = ("passed", "failed", "errors", "skipped", "xfailed", "xpassed")
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -54,7 +55,12 @@ def source_hashes(run: Run) -> dict[str, str]:
     paths.extend(
         run.path / folder / name
         for task in run.task_ids
-        for folder, name in (("traces", f"trace_{task}.json"), ("test_outputs", f"{task}.log"))
+        for folder, name in (
+            ("traces", f"trace_{task}.json"),
+            ("test_outputs", f"{task}.log"),
+            ("logs", f"{task}.log"),
+            ("patches", f"{task}.patch"),
+        )
     )
     hashes = {}
     for path in paths:

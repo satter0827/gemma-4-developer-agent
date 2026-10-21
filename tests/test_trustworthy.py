@@ -814,6 +814,10 @@ def test_analysis_reads_reported_counts_without_replacing_official_grade(
     folder = path / "test_outputs"
     folder.mkdir()
     (folder / "task_b.log").write_text(summary)
+    (path / "logs").mkdir()
+    (path / "logs/task_b.log").write_text("Agent execution evidence")
+    (path / "patches").mkdir()
+    (path / "patches/task_b.patch").write_text("--- a/example.py\n+++ b/example.py\n")
     before = inventory(path)
     output = analysis.analyze(load_run(path), tmp_path / "analysis", 10000)
     report = json.loads((output / "report.json").read_text())
@@ -825,6 +829,8 @@ def test_analysis_reads_reported_counts_without_replacing_official_grade(
     else:
         assert {key: counts[key] for key in expected} == expected
     assert inventory(path) == before and str(folder / "task_b.log") in report["source_hashes"]
+    for name in ("logs/task_b.log", "patches/task_b.patch"):
+        assert report["source_hashes"][str(path / name)] == file_hash(path / name)
 
 
 @pytest.mark.parametrize(
@@ -834,6 +840,7 @@ def test_analysis_reads_reported_counts_without_replacing_official_grade(
         ("Agent exceeded session timeout (1 min)", True, None),
         ("Agent exceeded tool call budget (10 calls)", None, True),
         ("Verification timed out after 300 seconds", None, None),
+        ("Sandbox execution error: litellm.ContextWindowExceededError: input too long", None, None),
     ],
 )
 def test_analysis_does_not_misread_configured_limits_as_exhausted_budgets(
@@ -850,7 +857,9 @@ def test_analysis_does_not_misread_configured_limits_as_exhausted_budgets(
             "steps": [
                 {
                     "tool_calls": [{"function_name": "get_status", "arguments": {}}],
-                    "observation": {"content": '{"timeout":60,"tool_call_limit":30}'},
+                    "observation": {
+                        "content": '{"timeout":60,"tool_call_limit":30,"max_tokens":16384}'
+                    },
                 }
             ]
         },
@@ -862,6 +871,9 @@ def test_analysis_does_not_misread_configured_limits_as_exhausted_budgets(
     )
     assert evidence["verification_timeout"] is (
         True if error and error.startswith("Verification") else None
+    )
+    assert evidence["context_window_exceeded"] is (
+        True if error and "ContextWindowExceededError" in error else None
     )
 
 
