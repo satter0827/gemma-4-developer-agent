@@ -1,0 +1,264 @@
+"""Prepare private Kaggle code and inspect official evaluation artifacts."""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+from gemma_agent_dev.candidates.preflight import artifact_limit
+from gemma_agent_dev.common.paths import artifact_directory
+from gemma_agent_dev.evaluation.results import Run, comparison_differences, load_run, read_artifact
+
+ARTIFACT_TYPES = {
+    "patch": "patches/{task}.patch",
+    "test-log": "test_outputs/{task}.log",
+    "agent-log": "logs/{task}.log",
+    "trace": "traces/trace_{task}.json",
+}
+CONDITION_LABELS = {
+    "task_ids": "対象課題",
+    "actual_task_order": "実際の実行順序",
+    "evaluation": "実行上限",
+    "environment": "実行環境",
+    "tasks_sha256": "課題データ",
+    "verification_timeout_seconds": "パッチ検証時間",
+    "vllm_config": "推論サーバー設定",
+    "submission_files": "エージェント・提出ファイル",
+    "model_source": "モデル",
+    "docker_image": "実行イメージ",
+    "vllm": "推論設定",
+    "context_cache": "キャッシュ設定",
+    "compaction": "履歴の圧縮設定",
+    "incomplete": "完了状況",
+    "snapshots": "課題ソース",
+    "wheelhouse_hashes": "公式ライブラリのハッシュ",
+    "dependencies": "インストール済み依存関係",
+    "source_setup": "課題ソースの読み込み設定",
+}
+
+
+def load_runs(directory: Path) -> tuple[list[Run], list[str]]:
+    runs: list[Run] = []
+    errors = []
+    seen = set()
+    for manifest in sorted(directory.glob("**/manifest.json")):
+        try:
+            if not manifest.resolve().is_relative_to(directory):
+                raise ValueError("結果ファイルが保存先の外を指しています。")
+            run = load_run(manifest.parent)
+            run_id = run.manifest["run_id"]
+            if run_id in seen:
+                runs = [item for item in runs if item.manifest["run_id"] != run_id]
+                raise ValueError(f"実行IDが重複しています：{run_id}")
+            seen.add(run_id)
+            runs.append(run)
+        except (OSError, ValueError, TypeError) as error:
+            errors.append(f"結果を読み込めません：{manifest.parent.name}（{error}）")
+    return runs, errors
+
+
+def find_run(runs: list[Run], run_id: str) -> Run:
+    matches = [run for run in runs if run.manifest["run_id"] == run_id]
+    if not matches:
+        raise ValueError(f"実行IDが見つかりません：{run_id}")
+    return matches[0]
+
+
+def task_status(run: Run, task: str) -> str:
+    if run.kind == "verification":
+        record = run.controls.get(task)
+        if record is None:
+            return "未完了"
+        return (
+            "検証通過"
+            if record["reference"]["resolved"] and not record["unmodified"]["resolved"]
+            else "検証失敗"
+        )
+    row = run.rows.get(task)
+    if row is None:
+        return "未完了"
+    if row["resolved"]:
+        return "解決"
+    return "実行エラー" if row.get("error") else "未解決"
+
+
+def run_status(run: Run) -> str:
+    if run.problems:
+        return "要確認"
+    return {"completed": "完了", "running": "未完了", "failed": "失敗"}[run.manifest["status"]]
+
+
+def condition(run: Run, field: str) -> object:
+    if field == "actual_task_order":
+        from gemma_agent_dev.evaluation.analysis import actual_task_order
+
+        return actual_task_order(run)
+    if field == "incomplete":
+        return run_status(run)
+    return run.manifest.get(field, run.manifest.get("runtime_config", {}).get(field))
+
+
+def report_problems(run: Run) -> bool:
+    for problem in run.problems:
+        print(f"確認事項：{run.manifest['run_id']}：{problem}", file=sys.stderr)
+    return bool(run.problems)
+
+
+def configure(commands: Any) -> None:
+    budget = commands.add_parser("check-gpu-budget", help="観測したGPU枠から次の実行可否を確認")
+    budget.add_argument("--config", type=Path, required=True)
+    budget.add_argument("--consumed-hours", type=float, required=True)
+    budget.add_argument("--remaining-hours", type=float, required=True)
+    budget.add_argument("--completed-runs", type=int, required=True)
+    budget.add_argument("--active", action="store_true")
+    commands.add_parser("results", help="保存した評価結果を一覧表示")
+    show = commands.add_parser("show", help="評価結果の詳細を表示")
+    show.add_argument("run_id", metavar="RUN_ID")
+    show.add_argument("--task", help="課題ID")
+    show.add_argument("--artifact", choices=ARTIFACT_TYPES, help="表示するファイル")
+    analyze = commands.add_parser("analyze", help="公式結果を変更せず行動と失敗原因を分析")
+    analyze.add_argument("run_id", metavar="RUN_ID")
+    analyze.add_argument("--other", metavar="RUN_ID")
+    compare = commands.add_parser("compare", help="2つの実験を比較")
+    compare.add_argument("left", metavar="RUN_ID")
+    compare.add_argument("right", metavar="RUN_ID")
+    for name, help_text in (
+        ("prepare-runtime-checks", "公式SDKのCPU確認環境を準備"),
+        ("check-runtime", "公式SDKを合成入力で検証"),
+    ):
+        parser = commands.add_parser(name, help=help_text)
+        parser.add_argument("--config", type=Path, required=True)
+        parser.set_defaults(handler=run)
+    for parser in (budget, show, analyze, compare, commands.choices["results"]):
+        parser.set_defaults(handler=run)
+    show.set_defaults(command_parser=show)
+
+
+def run(root: Path, args: argparse.Namespace) -> int:
+    if args.command == "show" and args.artifact and not args.task:
+        args.command_parser.error("--artifactには--taskの指定が必要です。")
+    if args.command == "check-gpu-budget":
+        from gemma_agent_dev.evaluation.budget import GpuBudget
+
+        budget_settings = GpuBudget.load(root, args.config)
+        decision = budget_settings.admit(
+            consumed=args.consumed_hours,
+            remaining=args.remaining_hours,
+            completed_runs=args.completed_runs,
+            active=args.active,
+        )
+        print(json.dumps(decision, ensure_ascii=False, indent=2))
+        return int(not decision["allowed"])
+    if args.command in {"prepare-runtime-checks", "check-runtime"}:
+        from gemma_agent_dev.evaluation.sdk_checks import check
+        from gemma_agent_dev.evaluation.sdk_checks import prepare as prepare_runtime
+
+        output = (
+            prepare_runtime(root, args.config)
+            if args.command == "prepare-runtime-checks"
+            else check(root, args.config)
+        )
+        print(f"保存先：{output}")
+        return 0
+    runs, errors = load_runs(artifact_directory(root, "results"))
+    for error in errors:
+        print(error, file=sys.stderr)
+    invalid = bool(errors)
+    if args.command == "analyze":
+        from gemma_agent_dev.evaluation.analysis import analyze as analyze_run
+
+        run = find_run(runs, args.run_id)
+        other = find_run(runs, args.other) if args.other else None
+        output = analyze_run(run, artifact_directory(root, "analysis"), artifact_limit(root), other)
+        print(f"保存先：{output}")
+        return int(bool(run.problems))
+    if args.command == "results":
+        if not runs and not errors:
+            print("評価結果はまだありません。")
+        if runs:
+            print("実行ID\t状態\t段階\t予定\t完了\t解決\t解決率\t所要時間（秒）\t種別")
+        for run in runs:
+            rate = run.resolution_rate
+            print(
+                "\t".join(
+                    str(value)
+                    for value in (
+                        run.manifest["run_id"],
+                        run_status(run),
+                        run.manifest.get("phase", "—"),
+                        len(run.task_ids),
+                        run.completed_count,
+                        run.resolved if run.kind == "evaluation" else "—",
+                        f"{rate:.1%}" if rate is not None else "—",
+                        run.manifest.get("timings", {}).get("total_seconds", "—"),
+                        "参照検証" if run.kind == "verification" else "エージェント評価",
+                    )
+                )
+            )
+            invalid = report_problems(run) or invalid
+    elif args.command == "show":
+        run = find_run(runs, args.run_id)
+        invalid = report_problems(run) or invalid
+        if args.task:
+            if args.task not in run.task_ids:
+                raise ValueError(f"対象課題に含まれません：{args.task}")
+            print(f"課題：{args.task}\n結果：{task_status(run, args.task)}")
+            if args.artifact:
+                relative = ARTIFACT_TYPES[args.artifact].format(task=args.task.replace("/", "__"))
+                print(read_artifact(run, relative, artifact_limit(root)))
+            else:
+                records = run.controls if run.kind == "verification" else run.rows
+                print(json.dumps(records.get(args.task), ensure_ascii=False, indent=2))
+        else:
+            print(f"状態：{run_status(run)}\n実行条件と記録：")
+            print(json.dumps(run.manifest, ensure_ascii=False, indent=2))
+    else:
+        left, right = find_run(runs, args.left), find_run(runs, args.right)
+        invalid = report_problems(left) or invalid
+        invalid = report_problems(right) or invalid
+        if left.kind != "evaluation" or right.kind != "evaluation":
+            raise ValueError("参照検証はエージェント評価と比較できません。")
+        from gemma_agent_dev.evaluation.analysis import actual_task_order
+
+        differences = comparison_differences(left, right)
+        a_order, b_order = actual_task_order(left), actual_task_order(right)
+        if a_order is None or a_order != b_order:
+            differences.append("actual_task_order")
+        if differences:
+            print("比較条件に差があるか、照合できない記録があります。")
+            for field in differences:
+                a, b = condition(left, field), condition(right, field)
+                if field == "submission_files" and isinstance(a, dict) and isinstance(b, dict):
+                    changed = sorted(
+                        name for name in a.keys() | b.keys() if a.get(name) != b.get(name)
+                    )
+                    print(f"{CONDITION_LABELS[field]}：" + "、".join(changed))
+                    continue
+                print(
+                    f"{CONDITION_LABELS[field]}："
+                    + json.dumps(
+                        {
+                            args.left: condition(left, field),
+                            args.right: condition(right, field),
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+        else:
+            print("同じ課題と実行条件で比較できます。")
+        print(f"課題\t{args.left}\t{args.right}\t左の時間（秒）\t右の時間（秒）")
+        for task in dict.fromkeys((a_order or left.task_ids) + (b_order or right.task_ids)):
+            print(
+                "\t".join(
+                    str(value)
+                    for value in (
+                        task,
+                        task_status(left, task),
+                        task_status(right, task),
+                        left.rows.get(task, {}).get("duration_seconds", "—"),
+                        right.rows.get(task, {}).get("duration_seconds", "—"),
+                    )
+                )
+            )
+    return int(invalid)

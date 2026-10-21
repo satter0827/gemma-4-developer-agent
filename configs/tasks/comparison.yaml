@@ -1,0 +1,20 @@
+diagnostic_config: configs/diagnostics/comparison.yaml
+per_repository: 2
+candidates:
+  fastapi:
+  - fastapi_14786
+  - fastapi_14360
+  - fastapi_14873
+  - fastapi_14458
+  requests:
+  - requests_7315
+  - requests_7309
+  - requests_7328
+  - requests_7505
+  - requests_7433
+  rich:
+  - rich_3052
+  - rich_3180
+  - rich_3130
+  - rich_3278
+fixed_selection: artifacts/qualification/qualified.json

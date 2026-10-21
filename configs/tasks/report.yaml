@@ -1,0 +1,9 @@
+catalog: configs/tasks/catalog.yaml
+runtime: configs/evaluation/runtime.yaml
+cpu_environment: artifacts/runtime-env
+wheel_cache: artifacts/reference/wheels
+timeout_seconds: 120
+task_count: 129
+qualified: artifacts/qualification/qualified.json
+diagnostics: configs/diagnostics/fastapi.yaml
+annotations: configs/tasks/annotations.yaml

@@ -31,7 +31,7 @@ select = ["E", "F", "I", "B", "UP", "PLR2004"]
 python_version = "3.12"
 strict = true
 cache_dir = "artifacts/cache/mypy"
-files = ["src", "tests", "kaggle", "scripts"]
+files = ["src", "tests", "scripts"]
 
 [[tool.mypy.overrides]]
 module = ["swegemma.*", "adk_submission.*", "adk_eval_core.*", "google.adk.*", "google.genai.*", "litellm", "torch"]
@@ -44,7 +44,7 @@ addopts = "--basetemp=artifacts/tmp/pytest"
 
 [tool.coverage.run]
 branch = true
-source = ["gemma_agent_dev", "kaggle", "scripts"]
+source = ["gemma_agent_dev", "scripts"]
 data_file = "artifacts/coverage/.coverage"
 relative_files = true
 
@@ -75,20 +75,85 @@ numeric_parameters = ["timeout", "startup_timeout", "max_bytes", "concurrency", 
 
 [tool.architecture.roots]
 "src/gemma_agent_dev" = "gemma_agent_dev"
-"kaggle" = "kaggle"
 "scripts" = "scripts"
 
 [tool.architecture.modules]
-core = ["gemma_agent_dev", "gemma_agent_dev.artifacts", "gemma_agent_dev.config", "gemma_agent_dev.results", "gemma_agent_dev.candidates", "gemma_agent_dev.packaging", "gemma_agent_dev.test_evidence", "gemma_agent_dev.processes", "gemma_agent_dev.provenance", "gemma_agent_dev.analysis", "gemma_agent_dev.gpu_budget"]
-settings = ["gemma_agent_dev.diagnostic_config", "gemma_agent_dev.task_catalog", "gemma_agent_dev.submission_config"]
-connection = ["gemma_agent_dev.official", "gemma_agent_dev.environment", "gemma_agent_dev.sandbox_sources", "gemma_agent_dev.official_cpu", "gemma_agent_dev.submission_api", "gemma_agent_dev.task_metrics"]
-diagnostic = ["gemma_agent_dev.diagnostics", "gemma_agent_dev.qualification", "gemma_agent_dev.runtime_checks"]
-local = ["gemma_agent_dev.preflight", "gemma_agent_dev.kaggle_bundle", "gemma_agent_dev.diagnostic_bundle", "gemma_agent_dev.task_report"]
-operations = ["gemma_agent_dev.submission", "gemma_agent_dev.submission_store", "gemma_agent_dev.submission_state"]
-remote = ["gemma_agent_dev.runtime", "gemma_agent_dev.diagnostic_kaggle", "gemma_agent_dev.worker"]
-cli = ["gemma_agent_dev.cli", "gemma_agent_dev.submission_cli"]
-entry = ["kaggle.entry"]
-quality = ["scripts.check_coverage", "scripts.check_architecture"]
+core = [
+  "gemma_agent_dev",
+  "gemma_agent_dev.common",
+  "gemma_agent_dev.common.archives",
+  "gemma_agent_dev.common.config",
+  "gemma_agent_dev.common.paths",
+  "gemma_agent_dev.common.sources",
+  "gemma_agent_dev.tasks",
+  "gemma_agent_dev.diagnostics",
+  "gemma_agent_dev.evaluation",
+  "gemma_agent_dev.candidates",
+  "gemma_agent_dev.notebooks",
+  "gemma_agent_dev.submission",
+  "gemma_agent_dev.common.artifacts",
+  "gemma_agent_dev.evaluation.config",
+  "gemma_agent_dev.evaluation.results",
+  "gemma_agent_dev.candidates.archive",
+  "gemma_agent_dev.candidates.packaging",
+  "gemma_agent_dev.common.junit",
+  "gemma_agent_dev.common.processes",
+  "gemma_agent_dev.diagnostics.origins",
+  "gemma_agent_dev.evaluation.analysis",
+  "gemma_agent_dev.evaluation.budget",
+]
+settings = [
+  "gemma_agent_dev.diagnostics.config",
+  "gemma_agent_dev.tasks.catalog",
+  "gemma_agent_dev.submission.config",
+]
+connection = [
+  "gemma_agent_dev.evaluation.official",
+  "gemma_agent_dev.notebooks.environment",
+  "gemma_agent_dev.diagnostics.sandbox",
+  "gemma_agent_dev.evaluation.sdk_worker",
+  "gemma_agent_dev.submission.api",
+  "gemma_agent_dev.tasks.metrics",
+]
+diagnostic = [
+  "gemma_agent_dev.diagnostics.local",
+  "gemma_agent_dev.diagnostics.qualification",
+  "gemma_agent_dev.evaluation.sdk_checks",
+]
+local = [
+  "gemma_agent_dev.candidates.preflight",
+  "gemma_agent_dev.notebooks.evaluation",
+  "gemma_agent_dev.notebooks.bundle",
+  "gemma_agent_dev.notebooks.diagnostics",
+  "gemma_agent_dev.tasks.report",
+]
+operations = [
+  "gemma_agent_dev.candidates.evidence",
+  "gemma_agent_dev.submission.service",
+  "gemma_agent_dev.submission.store",
+  "gemma_agent_dev.submission.state",
+]
+remote = [
+  "gemma_agent_dev.evaluation.runtime",
+  "gemma_agent_dev.diagnostics.remote",
+  "gemma_agent_dev.notebooks.worker",
+]
+cli = [
+  "gemma_agent_dev.cli",
+  "gemma_agent_dev.notebooks.cli",
+  "gemma_agent_dev.candidates.cli",
+  "gemma_agent_dev.evaluation.cli",
+  "gemma_agent_dev.diagnostics.cli",
+  "gemma_agent_dev.tasks.cli",
+  "gemma_agent_dev.submission.cli",
+]
+entry = [
+  "gemma_agent_dev.notebooks.entry",
+]
+quality = [
+  "scripts.check_coverage",
+  "scripts.check_architecture",
+]
 
 [tool.architecture.allowed]
 core = ["core"]

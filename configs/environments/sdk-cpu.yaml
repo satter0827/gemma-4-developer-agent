@@ -1,0 +1,9 @@
+runtime_config: configs/evaluation/runtime.yaml
+requirements: configs/environments/sdk-cpu.in
+lock_file: configs/environments/sdk-cpu.lock
+environment: artifacts/runtime-env
+wheel_cache: artifacts/reference/wheels
+output_dir: artifacts/runtime-checks
+timeout_seconds: 600
+python_version: '3.12'
+sampling: agent/configs/sampling.yaml

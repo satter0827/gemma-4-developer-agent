@@ -45,7 +45,7 @@ jobs:
           if [ "$SCHEDULE" = '15 11 * * *' ]; then mode=monitor; fi
           args=()
           if [ "$EVENT_NAME" = schedule ]; then args+=(--execute); fi
-          uv run --no-sync gemma-dev submission --config configs/submission.yaml run --mode "$mode" "${args[@]}"
+          uv run --no-sync gemma-dev submission --config configs/submission/policy.yaml run --mode "$mode" "${args[@]}"
       - name: Stop expired schedule
         if: >-
           always() && steps.submission.outputs.stop == 'true' && github.event_name == 'schedule'

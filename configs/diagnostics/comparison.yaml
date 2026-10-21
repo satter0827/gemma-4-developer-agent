@@ -1,9 +1,9 @@
-runtime_path: configs/runtime.json
+runtime_path: configs/evaluation/runtime.yaml
 cache_dir: artifacts/reference/comparison
 environments_dir: artifacts/comparison-envs
 output_dir: artifacts/qualification
-requirements: configs/diagnostics/comparison.in
-lock_file: configs/diagnostics/comparison.lock
+requirements: configs/environments/comparison.in
+lock_file: configs/environments/comparison.lock
 python_version: '3.12'
 kernel_id: satter0927/gemma-4-developer-agent-qualification
 timeout_seconds: 300
@@ -107,4 +107,4 @@ tasks:
   probe_expected_pass: false
   generated_expected_pass: false
   collection_error_cases: []
-catalog_path: configs/tasks.yaml
+catalog_path: configs/tasks/catalog.yaml
