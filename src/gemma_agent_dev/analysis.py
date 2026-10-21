@@ -76,7 +76,9 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
     result: dict[str, Any] = {
         "official_result": row,
         "individual_test_counts": None,
-        "first_edit_call": None,
+        "official_tool_calls": row.get("tool_calls") if row else None,
+        "first_edit_attempt_trace_call": None,
+        "reported_patch_submissions": [],
         "edit_failures": [],
         "verification_commands": [],
         "trace_error": None,
@@ -109,9 +111,13 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
             for call in step_calls:
                 calls += 1
                 name = call["function_name"]
+                if name == "submit_patch":
+                    result["reported_patch_submissions"].append(
+                        {"trace_call": calls, "observation": observed}
+                    )
                 if name in EDIT_TOOLS:
-                    if result["first_edit_call"] is None:
-                        result["first_edit_call"] = calls
+                    if result["first_edit_attempt_trace_call"] is None:
+                        result["first_edit_attempt_trace_call"] = calls
                     if observed.get("status") == "error":
                         result["edit_failures"].append({"call": calls, "observation": observed})
                 command = call.get("arguments", {}).get("command")
@@ -128,10 +134,10 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
                             "establishes_resolution": False,
                         }
                     )
-        result["tool_calls"] = calls
+        result["trace_tool_calls"] = calls
     except (OSError, ValueError, KeyError, TypeError) as error:
         result["trace_error"] = str(error)
-        result["tool_calls"] = None
+        result["trace_tool_calls"] = None
     for key, pattern in LIMIT_PATTERNS.items():
         result[key] = True if re.search(pattern, error_text, re.I) else None
     return result

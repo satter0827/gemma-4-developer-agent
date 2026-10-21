@@ -248,6 +248,10 @@ def test_analyze_separates_official_result_from_trace_claims_and_keeps_unknowns(
     make_run: Any, tmp_path: Path
 ) -> None:
     path = make_run()
+    result_file = path / "task_results.jsonl"
+    rows = [json.loads(line) for line in result_file.read_text().splitlines()]
+    rows[0]["tool_calls"] = 4
+    result_file.write_text("".join(json.dumps(row) + "\n" for row in rows))
     folder = path / "traces"
     folder.mkdir()
     trace = {
@@ -270,6 +274,7 @@ def test_analyze_separates_official_result_from_trace_claims_and_keeps_unknowns(
                 ],
                 "observation": {"content": '{"stdout":"0 tests collected","exit_code":0}'},
             },
+            {"tool_calls": [{"function_name": "submit_patch", "arguments": {}}]},
         ]
     }
     write_json(folder / "trace_task_a.json", trace)
@@ -280,12 +285,46 @@ def test_analyze_separates_official_result_from_trace_claims_and_keeps_unknowns(
     a = report["tasks"]["task_a"]
     b = report["tasks"]["task_b"]
     assert a["official_result"]["resolved"] is True and a["individual_test_counts"] is None
-    assert a["first_edit_call"] == 2 and len(a["edit_failures"]) == 1
+    assert a["first_edit_attempt_trace_call"] == 2 and len(a["edit_failures"]) == 1
+    assert a["official_tool_calls"] == 4 and a["trace_tool_calls"] == 5
+    assert b["official_tool_calls"] is None and b["trace_tool_calls"] is None
     assert (
         len(a["verification_commands"]) == 1
         and not a["verification_commands"][0]["establishes_resolution"]
     )
     assert b["time_limit_reached"] is None and b["trace_error"]
+
+
+def test_intermediate_submission_never_replaces_the_final_official_patch(
+    make_run: Any, tmp_path: Path
+) -> None:
+    path = make_run()
+    result_file = path / "task_results.jsonl"
+    rows = [json.loads(line) for line in result_file.read_text().splitlines()]
+    rows[1]["agent_patch_size"] = 0
+    result_file.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    (path / "traces").mkdir()
+    write_json(
+        path / "traces/trace_task_b.json",
+        {
+            "steps": [
+                {
+                    "tool_calls": [{"function_name": "submit_patch", "arguments": {}}],
+                    "observation": {"content": json.dumps({"status": "ok", "patch_size": size})},
+                }
+                for size in (404, 0)
+            ]
+        },
+    )
+    before = inventory(path)
+    output = analysis.analyze(load_run(path), tmp_path / "analysis", 10000)
+    evidence = json.loads((output / "report.json").read_text())["tasks"]["task_b"]
+    assert [s["observation"]["patch_size"] for s in evidence["reported_patch_submissions"]] == [
+        404,
+        0,
+    ]
+    assert evidence["official_result"]["agent_patch_size"] == 0
+    assert evidence["official_result"]["resolved"] is False and inventory(path) == before
 
 
 @pytest.mark.parametrize("outcome", ["improved", "unchanged", "regressed", "invalid"])
