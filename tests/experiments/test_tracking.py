@@ -328,11 +328,18 @@ def test_git_records_are_valid_without_mlflow_or_competition_data() -> None:
 
     for row in rows:
         if row.get("record_schema_version") == 2:
-            assert row["record_schema_version"] == 2
-            assert len(row["observations"]) == len(row["task_ids"])
-            assert (
-                sum(item["resolved"] for item in row["observations"]) == row["metrics"]["resolved"]
-            )
+            expected = {
+                (task, variant) for task in row["task_ids"] for variant in row["candidate_hashes"]
+            }
+            assert {(item["task_id"], item["variant"]) for item in row["observations"]} == expected
+            if row["status"] == "cpu-verified":
+                assert row["decision"] == "unevaluated"
+                assert all(item["resolved"] is None for item in row["observations"])
+            if {"resolved", "total"} <= row["metrics"].keys():
+                assert (
+                    sum(item["resolved"] is True for item in row["observations"])
+                    == row["metrics"]["resolved"]
+                )
             continue
         definition = Experiment.load(ROOT, Path(f"configs/evaluation/{row['experiment_id']}.yaml"))
         assert row["experiment_id"] == definition.experiment_id

@@ -1,0 +1,189 @@
+{
+  "record_schema_version": 2,
+  "record_id": "easy-skills-v3-cpu-20261022",
+  "experiment_id": "easy-skills-v3",
+  "hypothesis": "structured-test-verification",
+  "status": "cpu-verified",
+  "task_ids": [
+    "fastapi_14297",
+    "rich_3944",
+    "requests_6592",
+    "fastapi_14463",
+    "rich_3006",
+    "requests_6589"
+  ],
+  "definition_sha256": "557b7b5d9daa39b92309e87d4e5b653d71e183151659ebf1dcb006dfd00ea21f",
+  "source_sha256": "d5a1eeb02d031e512a39c027f5c3fe7df8edd91eafc46c71c699445614ca8367",
+  "candidate_hashes": {
+    "workflow-v1": "411737ddf6b8f774a6edc6825bafa3f7498b121c7bb86c43021eae066f984dfa",
+    "workflow-skills-v1": "d150198198f5c3598c792a2ba639f8b9b115454e698ab531da4ba61d2c551ec5"
+  },
+  "metrics": {
+    "native_controls_matched": 12,
+    "sdk_skill_cases": 2,
+    "gpu_evaluations": 0
+  },
+  "interpretation": "同じ6課題のNative対照12件と固定SDKの検証Skill・共有予算が成立。Kaggle対照と実モデルの精度は未評価。",
+  "prompts": [
+    {
+      "prompt_id": "workflow-v1",
+      "path": "agent/prompts/workflow.md",
+      "sha256": "6ec9796d3388e5e08131dbfbbe4636787938f8f73730d583f2c8814f8a32f1d9"
+    }
+  ],
+  "observations": [
+    {
+      "task_id": "fastapi_14297",
+      "variant": "workflow-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "fastapi_14297",
+      "variant": "workflow-skills-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "rich_3944",
+      "variant": "workflow-skills-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "rich_3944",
+      "variant": "workflow-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "requests_6592",
+      "variant": "workflow-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "requests_6592",
+      "variant": "workflow-skills-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "fastapi_14463",
+      "variant": "workflow-skills-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "fastapi_14463",
+      "variant": "workflow-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "rich_3006",
+      "variant": "workflow-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "rich_3006",
+      "variant": "workflow-skills-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "requests_6589",
+      "variant": "workflow-skills-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "requests_6589",
+      "variant": "workflow-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    }
+  ],
+  "conditions": {
+    "max_tool_calls": 30,
+    "max_time_minutes": 5,
+    "max_turns": 50,
+    "sdk_version": "0.2.11",
+    "verification_timeout_seconds": 300,
+    "max_model_len": 32768
+  },
+  "quota_hours": null,
+  "decision": "unevaluated",
+  "parent_candidates": {
+    "workflow-v1": "workflow-v1",
+    "workflow-skills-v1": "workflow-v1"
+  },
+  "assessments": [
+    {
+      "category": "environment",
+      "certainty": "confirmed",
+      "basis": "Requestsのfixture依存不足を補正し、同じ6課題のNative対照12件が成立。Kaggle環境の補正後対照は未確認。"
+    }
+  ]
+}
