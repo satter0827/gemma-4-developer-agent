@@ -71,6 +71,10 @@ def analysis(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Pat
             }
         )
     )
+    manifest["evaluation_artifacts"] = {
+        name: file_hash(run / name) for name in ("task_results.jsonl", "summary.json")
+    }
+    (run / "manifest.json").write_text(json.dumps(manifest))
     (root / "before.json").write_text('{"used_hours":1,"refresh_at":"date"}')
     (root / "after.json").write_text('{"used_hours":2,"refresh_at":"date"}')
     config = {

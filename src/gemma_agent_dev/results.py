@@ -227,6 +227,18 @@ def comparison_differences(left: Run, right: Run) -> list[str]:
     return differences
 
 
+def require_evaluation_evidence(run: Run) -> None:
+    """Require immutable official outcomes for new registrations and published ledgers."""
+    artifacts = run.manifest.get("evaluation_artifacts")
+    if (
+        run.kind != "evaluation"
+        or not run.complete
+        or not isinstance(artifacts, dict)
+        or not {"task_results.jsonl", "summary.json"} <= set(artifacts)
+    ):
+        raise ValueError("Complete hashed evaluation outcomes are required")
+
+
 def read_artifact(run: Run, relative: str, max_bytes: int) -> str:
     path = (run.path / relative).resolve()
     if not path.is_relative_to(run.path.resolve()):

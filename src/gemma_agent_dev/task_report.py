@@ -11,7 +11,7 @@ import yaml
 
 from gemma_agent_dev.artifacts import file_hash, write_json
 from gemma_agent_dev.config import RuntimeSettings, mapping, positive, project_path
-from gemma_agent_dev.results import load_run, read_object
+from gemma_agent_dev.results import load_run, read_object, require_evaluation_evidence
 from gemma_agent_dev.task_catalog import TaskCatalog
 
 ANNOTATION_FIELDS = frozenset({"target", "behavior", "reproduction", "fix"})
@@ -122,6 +122,7 @@ def build_report(root: Path, config_path: Path) -> dict[str, Any]:
     seen_runs: set[str] = set()
     for spec in config["runs"]:
         run = load_run(project_path(root, spec["manifest"]).parent, require_evaluation=True)
+        require_evaluation_evidence(run)
         if not run.complete or run.manifest.get("tasks_sha256") != catalog.tasks_sha256:
             raise ValueError("Incomplete or incompatible historical run")
         if run.manifest["run_id"] in seen_runs:

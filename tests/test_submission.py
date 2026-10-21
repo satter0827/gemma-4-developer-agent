@@ -435,6 +435,9 @@ def test_archived_evidence_is_independent_of_checkout(
             )
         )
         (directory / "summary.json").write_text('{"total_tasks":1,"resolved":0}')
+        manifest["evaluation_artifacts"] = {
+            name: file_hash(directory / name) for name in ("task_results.jsonl", "summary.json")
+        }
         path = directory / "manifest.json"
         path.write_text(json.dumps(manifest))
         paths.append(path)
@@ -446,6 +449,7 @@ def test_archived_evidence_is_independent_of_checkout(
         {"controls_passed": False},
         {"source_sha256": "c" * 64},
         {"control_artifacts": {}},
+        {"evaluation_artifacts": {}},
         {"submission_files": {"agent.yaml": "d" * 64}},
     ]
     for edit in edits:

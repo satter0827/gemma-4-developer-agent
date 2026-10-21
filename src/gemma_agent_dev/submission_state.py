@@ -10,7 +10,7 @@ from typing import Any
 
 from gemma_agent_dev.artifacts import file_hash
 from gemma_agent_dev.candidates import extract_archive, validate_references
-from gemma_agent_dev.results import load_run, read_object
+from gemma_agent_dev.results import load_run, read_object, require_evaluation_evidence
 from gemma_agent_dev.submission_config import timestamp
 from gemma_agent_dev.task_catalog import checksum
 
@@ -95,6 +95,7 @@ def qualify_candidate(
     cpu_path: Path, gpu_path: Path, source: dict[str, Any], max_bytes: int
 ) -> dict[str, Any]:
     cpu, gpu = load_run(cpu_path.parent), load_run(gpu_path.parent, require_evaluation=True)
+    require_evaluation_evidence(gpu)
     if cpu.kind != "verification" or not cpu.complete or not gpu.complete:
         raise ValueError("Candidate requires complete CPU and GPU evidence")
     if (
