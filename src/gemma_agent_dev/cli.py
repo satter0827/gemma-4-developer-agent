@@ -123,6 +123,12 @@ def report_problems(run: Run) -> bool:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="提出コードの準備と評価結果の確認")
     commands = parser.add_subparsers(dest="command", required=True)
+    from gemma_agent_dev.submission_cli import configure as configure_submission
+
+    configure_submission(commands)
+    task_report = commands.add_parser("task-report", help="固定課題の分析台帳を生成")
+    task_report.add_argument("--config", type=Path, required=True)
+    task_report.add_argument("--write-docs", action="store_true", help="文書の台帳も更新")
     prepare = commands.add_parser("prepare-kaggle", help="Private用の提出準備コードを生成")
     prepare.add_argument("--name", required=True, help="生成先の名前")
     prepare.add_argument("--preflight-report", type=Path, help="完了したローカル事前検証の記録")
@@ -167,6 +173,15 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--nameには英数字・ハイフン・アンダースコアを使用してください。")
     try:
         root = project_root()
+        if args.command == "submission":
+            from gemma_agent_dev.submission_cli import run as run_submission
+
+            return run_submission(root, args)
+        if args.command == "task-report":
+            from gemma_agent_dev.task_report import generate
+
+            print(f"保存先：{generate(root, args.config, write_docs=args.write_docs)}")
+            return 0
         if args.command == "check-gpu-budget":
             from gemma_agent_dev.gpu_budget import GpuBudget
 

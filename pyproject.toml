@@ -16,6 +16,7 @@ build-backend = "hatchling.build"
 packages = ["src/gemma_agent_dev"]
 
 [dependency-groups]
+submission = ["kaggle==2.2.4"]
 dev = ["pytest>=8,<10", "ruff>=0.12,<1", "mypy>=1.17,<2", "types-PyYAML>=6,<7", "coverage>=7.10,<8"]
 
 [tool.ruff]
@@ -68,7 +69,7 @@ branch = 80
 max_artifact_bytes = 2000000
 
 [tool.architecture]
-gpu_free_roles = ["core", "settings", "diagnostic", "local", "cli", "quality"]
+gpu_free_roles = ["core", "settings", "diagnostic", "local", "cli", "quality", "operations"]
 inference_imports = ["torch", "litellm", "swegemma", "adk_submission", "adk_eval_core", "google.adk"]
 numeric_parameters = ["timeout", "startup_timeout", "max_bytes", "concurrency", "retries", "max_attempts"]
 
@@ -79,23 +80,25 @@ numeric_parameters = ["timeout", "startup_timeout", "max_bytes", "concurrency", 
 
 [tool.architecture.modules]
 core = ["gemma_agent_dev", "gemma_agent_dev.artifacts", "gemma_agent_dev.config", "gemma_agent_dev.results", "gemma_agent_dev.candidates", "gemma_agent_dev.packaging", "gemma_agent_dev.test_evidence", "gemma_agent_dev.processes", "gemma_agent_dev.provenance", "gemma_agent_dev.analysis", "gemma_agent_dev.gpu_budget"]
-settings = ["gemma_agent_dev.diagnostic_config", "gemma_agent_dev.task_catalog"]
-connection = ["gemma_agent_dev.official", "gemma_agent_dev.environment", "gemma_agent_dev.sandbox_sources", "gemma_agent_dev.official_cpu"]
+settings = ["gemma_agent_dev.diagnostic_config", "gemma_agent_dev.task_catalog", "gemma_agent_dev.submission_config"]
+connection = ["gemma_agent_dev.official", "gemma_agent_dev.environment", "gemma_agent_dev.sandbox_sources", "gemma_agent_dev.official_cpu", "gemma_agent_dev.submission_api", "gemma_agent_dev.task_metrics"]
 diagnostic = ["gemma_agent_dev.diagnostics", "gemma_agent_dev.qualification", "gemma_agent_dev.runtime_checks"]
-local = ["gemma_agent_dev.preflight", "gemma_agent_dev.kaggle_bundle", "gemma_agent_dev.diagnostic_bundle"]
+local = ["gemma_agent_dev.preflight", "gemma_agent_dev.kaggle_bundle", "gemma_agent_dev.diagnostic_bundle", "gemma_agent_dev.task_report"]
+operations = ["gemma_agent_dev.submission", "gemma_agent_dev.submission_store", "gemma_agent_dev.submission_state"]
 remote = ["gemma_agent_dev.runtime", "gemma_agent_dev.diagnostic_kaggle", "gemma_agent_dev.worker"]
-cli = ["gemma_agent_dev.cli"]
+cli = ["gemma_agent_dev.cli", "gemma_agent_dev.submission_cli"]
 entry = ["kaggle.entry"]
 quality = ["scripts.check_coverage", "scripts.check_architecture"]
 
 [tool.architecture.allowed]
 core = ["core"]
 settings = ["core", "settings"]
-connection = ["core", "connection"]
+connection = ["core", "settings", "connection"]
+operations = ["core", "settings", "connection", "operations"]
 diagnostic = ["core", "settings", "diagnostic"]
 local = ["core", "settings", "diagnostic", "local"]
 remote = ["core", "connection", "remote"]
-cli = ["core", "settings", "diagnostic", "local", "cli"]
+cli = ["core", "settings", "diagnostic", "local", "operations", "connection", "cli"]
 entry = ["remote"]
 quality = ["quality"]
 

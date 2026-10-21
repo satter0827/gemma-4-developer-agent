@@ -1,0 +1,30 @@
+{
+  "id": "748a4732e640423e9d23fb8b471e5e5453a202e4c8d1f86a82761645f4ae3948",
+  "archive_sha256": "4c49619decaa48f56afe5079c61e0a17dd6f837e23ee441a8069d2d0109deefd",
+  "files": {
+    "adapters/main_lora/adapter_config.json": "75a46da2db7f3c70442e5c728f64059aff52cf64174cee7aeb3a4ec37f6e78fb",
+    "adapters/main_lora/adapter_model.safetensors": "dcbedd989af34f5201a39606e0bd4014d351a29162dd96da418782cbbe487ad9",
+    "adapters/tool_lora/adapter_config.json": "75a46da2db7f3c70442e5c728f64059aff52cf64174cee7aeb3a4ec37f6e78fb",
+    "adapters/tool_lora/adapter_model.safetensors": "dcbedd989af34f5201a39606e0bd4014d351a29162dd96da418782cbbe487ad9",
+    "agent.yaml": "c7fbbbbdc44778419be8e9f53a85800eeb17d0cf151e0846c46e107401b72034",
+    "configs/sampling.yaml": "240f8eafb256fa6a5ee0555772f316ff99f8b8f22d306e7fcd3b57c2a9571f28",
+    "eval_config.yaml": "838c0fab3569ee4c5841e787cf8d4aa1540ff43f0d0c7bf59a91d7153ce450c7",
+    "prompts/analyzer.md": "967d1515469930ba9b0264948c9505d0a725bdcabc2d1be8d91a8e3c6a66da29",
+    "prompts/system.md": "6ec9796d3388e5e08131dbfbbe4636787938f8f73730d583f2c8814f8a32f1d9",
+    "prompts/workflow.md": "6ec9796d3388e5e08131dbfbbe4636787938f8f73730d583f2c8814f8a32f1d9",
+    "sub_agents/code_analyzer.yaml": "7a764798e36cc68aa38900256245e4aed969b5439b992c7da4105b6ebcb7e62b"
+  },
+  "source": {
+    "owner": "satter0927",
+    "kernel": "gemma-4-developer-agent-baseline",
+    "version": 10,
+    "path": "artifacts/results/20261021T014640Z-48c82b1c/submission.zip"
+  },
+  "evidence": {
+    "cpu_manifest_sha256": "66409fe6fa5adca599155c763838466d354fa78255aacd6912b122ee088d05e7",
+    "gpu_manifest_sha256": "89f6b72d96e3a125d734210dcd63085c33ce064e1025dcb4618fafb30303c4ba",
+    "source_sha256": "85118c9ed7af7b293396491e2b95ecd16f246084e12e60e4aa05af7620f70b99",
+    "cpu_run_id": "20261021T004407Z-622d0649",
+    "gpu_run_id": "20261021T014640Z-48c82b1c"
+  }
+}
