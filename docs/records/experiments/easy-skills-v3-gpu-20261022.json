@@ -1,0 +1,217 @@
+{
+  "record_schema_version": 2,
+  "record_id": "easy-skills-v3-gpu-20261022",
+  "experiment_id": "easy-skills-v3",
+  "hypothesis": "structured-test-verification",
+  "status": "incomplete",
+  "task_ids": [
+    "fastapi_14297",
+    "rich_3944",
+    "requests_6592",
+    "fastapi_14463",
+    "rich_3006",
+    "requests_6589"
+  ],
+  "definition_sha256": "557b7b5d9daa39b92309e87d4e5b653d71e183151659ebf1dcb006dfd00ea21f",
+  "source_sha256": "9295a401e8097bd070b9933224e67c980a3a2f9b253ee72577d6275b3699afe6",
+  "candidate_hashes": {
+    "workflow-v1": "411737ddf6b8f774a6edc6825bafa3f7498b121c7bb86c43021eae066f984dfa",
+    "workflow-skills-v1": "d150198198f5c3598c792a2ba639f8b9b115454e698ab531da4ba61d2c551ec5"
+  },
+  "metrics": {
+    "both": 2,
+    "baseline_only": 0,
+    "candidate_only": 0,
+    "neither": 1,
+    "errors": 0,
+    "incomplete": 0,
+    "not_run": 3,
+    "cell_errors": 0,
+    "cpu_seconds": 1015.4885204900002,
+    "model_startup_seconds": 1020.232536984,
+    "total_seconds": 3896.9138296650003
+  },
+  "interpretation": "固定6課題のうち3課題の対比較が完了し、両候補とも2問成功。候補だけの成功は0問で、残り3課題は残時間不足により未実行のため採用保留。",
+  "prompts": [
+    {
+      "prompt_id": "workflow-v1",
+      "path": "agent/prompts/workflow.md",
+      "sha256": "6ec9796d3388e5e08131dbfbbe4636787938f8f73730d583f2c8814f8a32f1d9"
+    }
+  ],
+  "observations": [
+    {
+      "task_id": "fastapi_14297",
+      "variant": "workflow-v1",
+      "run_id": "20261021T184625Z-dcb4dd9e-000-fastapi_14297-workflow-v1",
+      "resolved": true,
+      "duration_seconds": 260.64,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "task_id": "fastapi_14297",
+      "variant": "workflow-skills-v1",
+      "run_id": "20261021T184625Z-dcb4dd9e-001-fastapi_14297-workflow-skills-v1",
+      "resolved": true,
+      "duration_seconds": 308.47,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "task_id": "rich_3944",
+      "variant": "workflow-v1",
+      "run_id": "20261021T184625Z-dcb4dd9e-003-rich_3944-workflow-v1",
+      "resolved": false,
+      "duration_seconds": 301.32,
+      "status": "completed",
+      "termination": "time_limit_reached",
+      "implementation_changed": null,
+      "tool_argument_errors": 0
+    },
+    {
+      "task_id": "rich_3944",
+      "variant": "workflow-skills-v1",
+      "run_id": "20261021T184625Z-dcb4dd9e-002-rich_3944-workflow-skills-v1",
+      "resolved": false,
+      "duration_seconds": 301.14,
+      "status": "completed",
+      "termination": "time_limit_reached",
+      "implementation_changed": null,
+      "tool_argument_errors": 0
+    },
+    {
+      "task_id": "requests_6592",
+      "variant": "workflow-v1",
+      "run_id": "20261021T184625Z-dcb4dd9e-004-requests_6592-workflow-v1",
+      "resolved": true,
+      "duration_seconds": 262.65,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "task_id": "requests_6592",
+      "variant": "workflow-skills-v1",
+      "run_id": "20261021T184625Z-dcb4dd9e-005-requests_6592-workflow-skills-v1",
+      "resolved": true,
+      "duration_seconds": 403.7,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "task_id": "fastapi_14463",
+      "variant": "workflow-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "fastapi_14463",
+      "variant": "workflow-skills-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "rich_3006",
+      "variant": "workflow-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "rich_3006",
+      "variant": "workflow-skills-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "requests_6589",
+      "variant": "workflow-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "requests_6589",
+      "variant": "workflow-skills-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    }
+  ],
+  "conditions": {
+    "max_tool_calls": 30,
+    "max_time_minutes": 5,
+    "max_turns": 50,
+    "sdk_version": "0.2.11",
+    "verification_timeout_seconds": 300,
+    "max_model_len": 32768
+  },
+  "quota_hours": 2.170668333333333,
+  "decision": "inconclusive",
+  "parent_candidates": {
+    "workflow-v1": "workflow-v1",
+    "workflow-skills-v1": "workflow-v1"
+  },
+  "assessments": [
+    {
+      "category": "exploration",
+      "certainty": "confirmed",
+      "basis": "Rich 3944は両候補とも検索と読解を続けて生成5分の上限に到達し、トレース上に編集や検証コマンドはない。最終実装差分は未確認。"
+    },
+    {
+      "category": "verification",
+      "certainty": "confirmed",
+      "basis": "Skill付き候補の完了3評価にrun_skill_scriptの呼出しはなく、両候補ともFastAPI 14297とRequests 6592だけが公式判定で成功。"
+    },
+    {
+      "category": "verification",
+      "certainty": "hypothesis",
+      "basis": "検証Skillを利用可能にするだけでは検証段階への移行を促せない可能性がある。指示や担当構成を変えた効果と残り3課題の成否は未確認。"
+    },
+    {
+      "category": "budget",
+      "certainty": "confirmed",
+      "basis": "GPU上のCPU対照に1015.49秒、モデル起動に1020.23秒を要し、全体3896.91秒で次の対比較と後始末に必要な残時間を下回ったため停止。"
+    },
+    {
+      "category": "environment",
+      "certainty": "confirmed",
+      "basis": "補正後の公式SDK対照は両候補の6課題で成立。完了6評価の証拠照合とログ健全性は正常で、未実行3課題を失敗へ変換していない。"
+    }
+  ]
+}
