@@ -22,10 +22,10 @@ def run(root: Path, provenance: dict[str, Any]) -> None:
 
     spec = json.loads((root / "diagnostics.json").read_text())
     runtime_file = root / "runtime.json"
-    write_json(runtime_file, spec["runtime"])
-    spec["runtime"]["task_ids"] = list(spec["snapshots"])
-    write_json(runtime_file, spec["runtime"])
+    write_json(runtime_file, {**spec["runtime"], "task_ids": spec["task_ids"]})
     runtime = RuntimeSettings.load(runtime_file)
+    if set(runtime.task_ids) != set(spec["snapshots"]):
+        raise ValueError("Diagnostic task list and snapshots disagree")
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     output = Path(runtime.paths.output).parent / "diagnostics" / run_id
     output.mkdir(parents=True, exist_ok=False)
@@ -41,6 +41,7 @@ def run(root: Path, provenance: dict[str, Any]) -> None:
         "snapshots": spec["snapshots"],
         "timeout_seconds": spec["timeout_seconds"],
         "lock_sha256": spec["lock_sha256"],
+        "task_ids": runtime.task_ids,
         "cases": [],
     }
     write_json(output / "report.json", report)

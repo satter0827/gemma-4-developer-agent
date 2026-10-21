@@ -322,7 +322,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print("同じ課題と実行条件で比較できます。")
             print(f"課題\t{args.left}\t{args.right}\t左の時間（秒）\t右の時間（秒）")
-            for task in sorted(set(left.task_ids) | set(right.task_ids)):
+            for task in dict.fromkeys(left.task_ids + right.task_ids):
                 print(
                     "\t".join(
                         str(value)

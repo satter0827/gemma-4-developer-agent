@@ -77,6 +77,7 @@ def verified_spec(settings: DiagnosticSettings) -> dict[str, Any]:
             raise ValueError("Local diagnostic test evidence is inconsistent")
     spec = {
         "fingerprint": settings.fingerprint(),
+        "task_ids": [t.instance_id for t in settings.tasks],
         "tasks_sha256": settings.tasks_sha256,
         "snapshots": {t.instance_id: t.snapshot_sha256 for t in settings.tasks},
         "sources": {

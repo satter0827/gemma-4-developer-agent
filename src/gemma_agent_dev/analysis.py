@@ -10,9 +10,59 @@ from gemma_agent_dev.results import Run, comparison_differences, read_artifact
 
 EDIT_TOOLS = frozenset({"edit_file", "write_file"})
 LIMIT_PATTERNS = {
-    "time_limit_reached": r"timed? out|time.?budget.*(?:exceed|exhaust)|timeout",
-    "tool_limit_reached": r"tool.?call.*(?:limit|exceed|exhaust)",
+    "time_limit_reached": (
+        r"\bagent (?:execution )?timed out\b|"
+        r"\bagent\b.*\bexceeded (?:session|generation) (?:timeout|time budget)\b|"
+        r"\b(?:session|generation) (?:budget|time limit) (?:exceeded|exhausted|reached)\b"
+    ),
+    "tool_limit_reached": (
+        r"(?:exceeded|exhausted|reached).*tool.?call.*(?:budget|limit)|"
+        r"tool.?call.*(?:budget|limit).*(?:exceeded|exhausted|reached)"
+    ),
+    "verification_timeout": r"\bverification\b.*(?:timeout|timed out)",
 }
+TEST_STATUSES = ("passed", "failed", "errors", "skipped", "xfailed", "xpassed")
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def reported_test_counts(text: str) -> dict[str, int] | None:
+    """Read the last pytest summary as reported evidence, never as an official grade."""
+    if "[Display truncated]" in text:
+        return None
+    text = ANSI_ESCAPE.sub("", text)
+    for line in reversed(text.splitlines()):
+        if not re.search(r"\bin \d+(?:\.\d+)?s\b", line):
+            continue
+        values = re.findall(r"\b(\d+) (passed|failed|errors?|skipped|xfailed|xpassed)\b", line)
+        if not values and "no tests ran" not in line:
+            continue
+        counts = {status: 0 for status in TEST_STATUSES}
+        for number, label in values:
+            counts["errors" if label == "error" else label] = int(number)
+        collection = bool(re.search(r"ERROR collecting|errors? during collection", text))
+        counts["collection_errors"] = counts["errors"] if collection else 0
+        if collection:
+            counts["errors"] = 0
+        counts["reported_total"] = sum(counts[status] for status in TEST_STATUSES)
+        counts["executed"] = counts["reported_total"] - counts["skipped"]
+        return counts
+    return None
+
+
+def source_hashes(run: Run) -> dict[str, str]:
+    paths = [run.path / name for name in ("manifest.json", "task_results.jsonl", "summary.json")]
+    paths.extend(
+        run.path / folder / name
+        for task in run.task_ids
+        for folder, name in (("traces", f"trace_{task}.json"), ("test_outputs", f"{task}.log"))
+    )
+    hashes = {}
+    for path in paths:
+        if not path.resolve().is_relative_to(run.path.resolve()):
+            raise ValueError("Analysis input escapes the run directory")
+        if path.is_file():
+            hashes[str(path)] = file_hash(path)
+    return hashes
 
 
 def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
@@ -24,8 +74,17 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
         "edit_failures": [],
         "verification_commands": [],
         "trace_error": None,
+        "test_log_error": None,
+        "ambiguous_tool_observations": False,
     }
-    text = str(row.get("error") or "") if row else ""
+    error_text = str(row.get("error") or "") if row else ""
+    try:
+        relative = f"test_outputs/{task_id}.log"
+        counts = reported_test_counts(read_artifact(run, relative, max_bytes))
+        result["individual_test_counts"] = counts
+        result["test_counts_source"] = relative if counts is not None else None
+    except OSError as error:
+        result["test_log_error"] = str(error)
     try:
         trace = json.loads(read_artifact(run, f"traces/trace_{task_id}.json", max_bytes))
         calls = 0
@@ -37,7 +96,11 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
                 observed = {}
             if not isinstance(observed, dict):
                 observed = {}
-            for call in step.get("tool_calls", []):
+            step_calls = step.get("tool_calls", [])
+            if len(step_calls) > 1:
+                result["ambiguous_tool_observations"] = True
+                observed = {}
+            for call in step_calls:
                 calls += 1
                 name = call["function_name"]
                 if name in EDIT_TOOLS:
@@ -59,13 +122,12 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
                             "establishes_resolution": False,
                         }
                     )
-            text += "\n" + str(observation)
         result["tool_calls"] = calls
     except (OSError, ValueError, KeyError, TypeError) as error:
         result["trace_error"] = str(error)
         result["tool_calls"] = None
     for key, pattern in LIMIT_PATTERNS.items():
-        result[key] = True if re.search(pattern, text, re.I) else None
+        result[key] = True if re.search(pattern, error_text, re.I) else None
     return result
 
 
@@ -74,17 +136,15 @@ def analyze(run: Run, output_root: Path, max_bytes: int, other: Run | None = Non
         raise ValueError("Diagnostics and controls are not agent evaluations")
     destination = output_root / new_run_id()
     destination.mkdir(parents=True)
-    sources = {
-        str(path): file_hash(path)
-        for path in run.path.rglob("*")
-        if path.is_file() and path.name in {"manifest.json", "task_results.jsonl", "summary.json"}
-    }
     report: dict[str, Any] = {
         "kind": "analysis",
         "run_id": run.manifest["run_id"],
         "run_complete": run.complete,
         "problems": list(run.problems),
-        "source_hashes": sources,
+        "source_hashes": source_hashes(run),
+        "phase": run.manifest.get("phase"),
+        "run_error": run.manifest.get("error"),
+        "cleanup_error": run.manifest.get("cleanup_error"),
         "tasks": {task: task_evidence(run, task, max_bytes) for task in run.task_ids},
         "formal_score": None,
     }
@@ -102,6 +162,7 @@ def analyze(run: Run, output_root: Path, max_bytes: int, other: Run | None = Non
         ]
         report["comparison"] = {
             "other_run_id": other.manifest["run_id"],
+            "other_source_hashes": source_hashes(other),
             "differences": differences,
             "changed_files": changed,
             "comparable_workflow_trial": comparable,

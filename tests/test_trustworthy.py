@@ -792,3 +792,142 @@ def test_catalog_cannot_pin_two_hashes_for_the_same_wheel(
     settings.catalog_path.write_text(yaml.safe_dump(data))
     with pytest.raises(ValueError, match="Conflicting"):
         TaskCatalog.load(settings.root, settings.catalog_path)
+
+
+@pytest.mark.parametrize(
+    "summary,expected",
+    [
+        ("6 failed, 18 passed in 1.24s", {"failed": 6, "passed": 18, "executed": 24}),
+        ("1 skipped in 0.01s", {"skipped": 1, "executed": 0}),
+        ("no tests ran in 0.01s", {"reported_total": 0, "executed": 0}),
+        (
+            "ERROR collecting tests/test_a.py\n1 error in 0.03s",
+            {"collection_errors": 1, "errors": 0, "executed": 0},
+        ),
+        ("print-only: 24 passed", None),
+    ],
+)
+def test_analysis_reads_reported_counts_without_replacing_official_grade(
+    make_run: Any, tmp_path: Path, summary: str, expected: dict[str, int] | None
+) -> None:
+    path = make_run()
+    folder = path / "test_outputs"
+    folder.mkdir()
+    (folder / "task_b.log").write_text(summary)
+    before = inventory(path)
+    output = analysis.analyze(load_run(path), tmp_path / "analysis", 10000)
+    report = json.loads((output / "report.json").read_text())
+    evidence = report["tasks"]["task_b"]
+    assert evidence["official_result"]["resolved"] is False
+    counts = evidence["individual_test_counts"]
+    if expected is None:
+        assert counts is None
+    else:
+        assert {key: counts[key] for key in expected} == expected
+    assert inventory(path) == before and str(folder / "task_b.log") in report["source_hashes"]
+
+
+@pytest.mark.parametrize(
+    "error,time_limit,tool_limit",
+    [
+        (None, None, None),
+        ("Agent exceeded session timeout (1 min)", True, None),
+        ("Agent exceeded tool call budget (10 calls)", None, True),
+        ("Verification timed out after 300 seconds", None, None),
+    ],
+)
+def test_analysis_does_not_misread_configured_limits_as_exhausted_budgets(
+    make_run: Any, error: str | None, time_limit: bool | None, tool_limit: bool | None
+) -> None:
+    path = make_run()
+    rows = [json.loads(line) for line in (path / "task_results.jsonl").read_text().splitlines()]
+    rows[1]["error"] = error
+    (path / "task_results.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    (path / "traces").mkdir()
+    write_json(
+        path / "traces/trace_task_b.json",
+        {
+            "steps": [
+                {
+                    "tool_calls": [{"function_name": "get_status", "arguments": {}}],
+                    "observation": {"content": '{"timeout":60,"tool_call_limit":30}'},
+                }
+            ]
+        },
+    )
+    evidence = analysis.task_evidence(load_run(path), "task_b", 10000)
+    assert (
+        evidence["time_limit_reached"] is time_limit
+        and evidence["tool_limit_reached"] is tool_limit
+    )
+    assert evidence["verification_timeout"] is (
+        True if error and error.startswith("Verification") else None
+    )
+
+
+def test_diagnostic_order_survives_sorted_mapping_serialization(
+    diagnostic_project: DiagnosticSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import importlib.metadata
+
+    from gemma_agent_dev import diagnostic_kaggle, environment
+
+    settings = diagnostic_project
+    root = settings.root
+    runtime = settings.runtime.as_dict()
+    runtime["paths"]["output"] = str(root / "artifacts/remote-results")
+    ids = ["fixture_z", "fixture_a"]
+    spec = {
+        "runtime": runtime,
+        "task_ids": ids,
+        "fingerprint": "fixture",
+        "tasks_sha256": settings.tasks_sha256,
+        "snapshots": {key: "0" * 64 for key in reversed(ids)},
+        "timeout_seconds": settings.timeout_seconds,
+        "lock_sha256": "0" * 64,
+        "cases": [{"task_id": key, "case": "reference"} for key in ids],
+    }
+    (root / "diagnostics.json").write_text(json.dumps(spec, sort_keys=True))
+    monkeypatch.setattr(environment, "install_wheelhouse", lambda *args: None)
+    monkeypatch.setattr(importlib.metadata, "version", lambda name: settings.runtime.packages[name])
+    captured = []
+
+    async def verify(runtime: Any, spec: Any, output: Any, report: Any) -> None:
+        captured.append(runtime.task_ids)
+        assert [case["task_id"] for case in spec["cases"]] == runtime.task_ids
+
+    monkeypatch.setattr(diagnostic_kaggle, "verify_cases", verify)
+    diagnostic_kaggle.run(root, {"source_sha256": "fixture"})
+    assert captured == [ids]
+
+
+def test_analysis_preserves_unknown_for_truncation_and_provider_timeouts(make_run: Any) -> None:
+    assert analysis.reported_test_counts("1 passed in 0.01s\n[Display truncated]") is None
+    path = make_run()
+    rows = [json.loads(line) for line in (path / "task_results.jsonl").read_text().splitlines()]
+    rows[1]["error"] = "Agent failed due to provider timeout"
+    (path / "task_results.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    assert analysis.task_evidence(load_run(path), "task_b", 10000)["time_limit_reached"] is None
+
+
+def test_compare_displays_explicit_task_order(
+    diagnostic_project: DiagnosticSettings,
+    make_run: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from gemma_agent_dev.cli import main
+
+    root = diagnostic_project.root
+    folder = root / "artifacts/results"
+    folder.mkdir()
+    for name in ["left", "right"]:
+        shutil.copytree(make_run(name, ids=("task_z", "task_a")), folder / name)
+    monkeypatch.chdir(root)
+    assert main(["compare", "left", "right"]) == 0
+    rows = [
+        line.split("\t")[0]
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith(("task_z\t", "task_a\t"))
+    ]
+    assert rows == ["task_z", "task_a"]
