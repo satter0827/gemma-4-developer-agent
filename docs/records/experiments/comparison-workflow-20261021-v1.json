@@ -1,0 +1,131 @@
+{
+  "record_schema_version": 2,
+  "record_id": "comparison-workflow-20261021-v1",
+  "experiment_id": "comparison-workflow-v1",
+  "hypothesis": "explicit-repair-and-verification-procedure",
+  "status": "evaluated",
+  "task_ids": [
+    "fastapi_14786",
+    "fastapi_14360",
+    "requests_7315",
+    "requests_7309",
+    "rich_3052",
+    "rich_3180"
+  ],
+  "definition_sha256": "3b7cf16133d0fa80d236e3942e09e6ed02fcdd8cb080c3c743d18a83623b3264",
+  "source_sha256": "85118c9ed7af7b293396491e2b95ecd16f246084e12e60e4aa05af7620f70b99",
+  "candidate_hashes": {
+    "workflow": "4c49619decaa48f56afe5079c61e0a17dd6f837e23ee441a8069d2d0109deefd"
+  },
+  "metrics": {
+    "resolved": 3,
+    "total": 6,
+    "bootstrap_seconds": 72.21123358900002,
+    "controls_seconds": 48.5063528,
+    "model_startup_seconds": 1161.3851784929998,
+    "evaluation_seconds": 1199.68385309,
+    "total_seconds": 2572.7236245699996
+  },
+  "interpretation": "固定6問で3問成功。FastAPI 14786は改善したが、残る3問の未解決原因と全体への効果は別途検証が必要。",
+  "prompts": [
+    {
+      "prompt_id": "workflow-v1",
+      "path": "agent/prompts/workflow.md",
+      "sha256": "6ec9796d3388e5e08131dbfbbe4636787938f8f73730d583f2c8814f8a32f1d9"
+    }
+  ],
+  "observations": [
+    {
+      "task_id": "fastapi_14786",
+      "variant": "workflow",
+      "run_id": "20261021T014640Z-48c82b1c",
+      "resolved": true,
+      "duration_seconds": 109.0,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "task_id": "fastapi_14360",
+      "variant": "workflow",
+      "run_id": "20261021T014640Z-48c82b1c",
+      "resolved": false,
+      "duration_seconds": 307.63,
+      "status": "completed",
+      "termination": "time_limit_reached",
+      "implementation_changed": false,
+      "tool_argument_errors": 1
+    },
+    {
+      "task_id": "requests_7315",
+      "variant": "workflow",
+      "run_id": "20261021T014640Z-48c82b1c",
+      "resolved": true,
+      "duration_seconds": 126.56,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "task_id": "requests_7309",
+      "variant": "workflow",
+      "run_id": "20261021T014640Z-48c82b1c",
+      "resolved": true,
+      "duration_seconds": 128.44,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "task_id": "rich_3052",
+      "variant": "workflow",
+      "run_id": "20261021T014640Z-48c82b1c",
+      "resolved": false,
+      "duration_seconds": 223.59,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "task_id": "rich_3180",
+      "variant": "workflow",
+      "run_id": "20261021T014640Z-48c82b1c",
+      "resolved": false,
+      "duration_seconds": 304.18,
+      "status": "completed",
+      "termination": "time_limit_reached",
+      "implementation_changed": false,
+      "tool_argument_errors": 1
+    }
+  ],
+  "conditions": {
+    "max_tool_calls": 30,
+    "max_time_minutes": 5,
+    "max_turns": 50,
+    "model": "gemma-4-31b-it-qat-w4a16-ct",
+    "sdk_version": "0.2.11",
+    "verification_timeout_seconds": 300,
+    "max_model_len": 32768
+  },
+  "quota_hours": 1.4343561111111116,
+  "decision": "provisional",
+  "parent_candidates": {
+    "workflow": "baseline-v1"
+  },
+  "assessments": [
+    {
+      "category": "budget",
+      "certainty": "confirmed",
+      "basis": "公式の生成終了理由で時間切れを確認。採点後の個別失敗理由とは区別する。"
+    },
+    {
+      "category": "verification",
+      "certainty": "hypothesis",
+      "basis": "実装差分と公開APIの検証が不足している可能性があり、担当分離と検証手順を個別に比較する。"
+    }
+  ]
+}

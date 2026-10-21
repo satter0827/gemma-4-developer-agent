@@ -11,8 +11,8 @@ make cli ARGS='qualify --config configs/tasks/comparison.yaml --fixed-selection'
 ## 候補を固定する
 
 ```sh
-make cli ARGS='preflight --config configs/evaluation/preflight.yaml --profile baseline'
-make cli ARGS='preflight --config configs/evaluation/preflight.yaml --profile workflow'
+make cli ARGS='preflight --config configs/evaluation/preflight-v2.yaml --profile baseline'
+make cli ARGS='preflight --config configs/evaluation/preflight-v2.yaml --profile workflow'
 ```
 
 各出力の`report.json`を次の操作へ渡します。smokeは1分・10ツール、比較プロファイルは5分・30ツールです。比較課題を再検証してから候補を固定します。

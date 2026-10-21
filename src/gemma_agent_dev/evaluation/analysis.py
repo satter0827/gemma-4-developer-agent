@@ -6,9 +6,19 @@ from pathlib import Path
 from typing import Any
 
 from gemma_agent_dev.common.artifacts import file_hash, new_run_id, write_json
+from gemma_agent_dev.common.events import LABEL, context, event
 from gemma_agent_dev.evaluation.results import Run, comparison_differences, read_artifact
 
 EDIT_TOOLS = frozenset({"edit_file", "write_file"})
+SCORABLE_TERMINATIONS = frozenset(
+    {
+        "completed",
+        "time_limit_reached",
+        "tool_limit_reached",
+        "turn_limit_reached",
+        "context_window_exceeded",
+    }
+)
 LIMIT_PATTERNS = {
     "time_limit_reached": (
         r"\bagent (?:execution )?timed out\b|"
@@ -21,7 +31,81 @@ LIMIT_PATTERNS = {
     ),
     "verification_timeout": r"\bverification\b.*(?:timeout|timed out)",
     "context_window_exceeded": r"\bContextWindowExceededError\b",
+    "turn_limit_reached": (
+        r"\bLlmCallsLimitExceededError\b|\bMax number of llm calls limit\b.*\bexceeded\b"
+    ),
 }
+
+
+def termination_reason(run: Run, task: str, evidence: dict[str, Any]) -> str:
+    """Separate generation limits from grading and execution failures."""
+    return next(
+        (
+            key
+            for key in (
+                "context_window_exceeded",
+                "time_limit_reached",
+                "tool_limit_reached",
+                "turn_limit_reached",
+                "verification_timeout",
+            )
+            if evidence.get(key)
+        ),
+        "execution_error"
+        if run.rows.get(task, {}).get("error")
+        else "completed"
+        if run.complete
+        else "unknown",
+    )
+
+
+def emit_tool_events(run: Run, task_id: str, max_bytes: int) -> None:
+    try:
+        trace = json.loads(read_artifact(run, f"traces/trace_{task_id}.json", max_bytes))
+        for step in trace["steps"]:
+            calls = step.get("tool_calls", [])
+            observation = step.get("observation", {}).get("content", "")
+            try:
+                observed = json.loads(observation) if len(calls) == 1 else {}
+            except (ValueError, TypeError):
+                observed = {}
+            observed = observed if isinstance(observed, dict) else {}
+            author = step.get("extra", {}).get("author")
+            for call in calls:
+                name = call.get("function_name")
+                if not isinstance(name, str) or not LABEL.fullmatch(name):
+                    continue
+                error = observed.get("error") or observed.get("error_message")
+                invalid = bool(
+                    error and re.search(r"argument|parameter|required|validation", str(error), re.I)
+                )
+                outcome = (
+                    "error"
+                    if error or observed.get("status") == "error"
+                    else "completed"
+                    if observed.get("status") in {"success", "ok"} or observed.get("exit_code") == 0
+                    else "unknown"
+                )
+                with context(task_id=task_id):
+                    event(
+                        "tool.observed",
+                        tool_name=name,
+                        stage=author
+                        if isinstance(author, str) and LABEL.fullmatch(author)
+                        else None,
+                        duration_seconds=None,
+                        result=outcome,
+                        reason_code="argument_validation_error" if invalid else None,
+                    )
+    except (OSError, ValueError, KeyError, TypeError):
+        event(
+            "tool.evidence_unavailable",
+            level="WARNING",
+            task_id=task_id,
+            reason_code="trace_unavailable",
+        )
+
+
 TEST_STATUSES = ("passed", "failed", "errors", "skipped", "xfailed", "xpassed")
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
@@ -130,7 +214,9 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
                         result["first_edit_attempt_trace_call"] = calls
                     arguments = call.get("arguments", {})
                     arguments = arguments if isinstance(arguments, dict) else {}
-                    target = arguments.get("file_path", arguments.get("path"))
+                    target = arguments.get(
+                        "filepath", arguments.get("file_path", arguments.get("path"))
+                    )
                     if not isinstance(target, str):
                         result["unknown_edit_targets"].append(calls)
                     elif re.search(r"(?:^|/)(?:repro|reproduce|scratch|tmp)[^/]*\.py$", target):
@@ -188,6 +274,25 @@ def actual_task_order(run: Run) -> list[str] | None:
     if [row["task_index"] for row in ordered] != list(range(1, len(run.task_ids) + 1)):
         return None
     return [row["instance_id"] for row in ordered]
+
+
+def implementation_changed(run: Run, task: str, max_bytes: int) -> bool | None:
+    """Inspect retained patch bytes rather than treating edit attempts as source changes."""
+    relative = f"patches/{task}.patch"
+    path = run.path / relative
+    if not path.is_file() or path.stat().st_size > max_bytes:
+        return None
+    text = read_artifact(run, relative, max_bytes)
+    names = re.findall(r"^(?:\+\+\+ b/|--- a/)(.+)$", text, re.M)
+    if not names:
+        return None
+    return any(
+        name.endswith((".py", ".pyi"))
+        and not re.search(
+            r"(?:^|/)(?:tests?(?:/|_)|(?:repro|reproduce|scratch|tmp)[^/]*\.py$)", name
+        )
+        for name in names
+    )
 
 
 def analyze(run: Run, output_root: Path, max_bytes: int, other: Run | None = None) -> Path:

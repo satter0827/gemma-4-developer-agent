@@ -1,11 +1,14 @@
 """Project validated Git metadata into a local SQLite store without a server."""
 
 import json
+import os
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
-from gemma_agent_dev.common.artifacts import write_json
+from gemma_agent_dev.common.artifacts import new_run_id, write_json
+from gemma_agent_dev.common.events import LogSettings, event, session
 
 
 def deny_network(event: str, args: tuple[Any, ...]) -> None:
@@ -87,6 +90,19 @@ def synchronize(request: dict[str, Any]) -> dict[str, Any]:
                 client.log_param(run.info.run_id, key, json.dumps(record[key], sort_keys=True))
             for key, value in record["metrics"].items():
                 client.log_metric(run.info.run_id, key, value)
+            if "record_schema_version" in record:
+                client.set_tag(run.info.run_id, "decision", record["decision"])
+                client.log_param(
+                    run.info.run_id,
+                    "parent_candidates",
+                    json.dumps(record["parent_candidates"], sort_keys=True),
+                )
+                for item in record["observations"]:
+                    client.log_param(
+                        run.info.run_id,
+                        f"outcome.{item['task_id']}.{item['variant']}",
+                        json.dumps({k: item[k] for k in ("resolved", "status", "termination")}),
+                    )
             client.set_terminated(run.info.run_id, "FINISHED")
         except BaseException as error:
             try:
@@ -107,8 +123,21 @@ def synchronize(request: dict[str, Any]) -> dict[str, Any]:
 def main() -> None:
     sys.addaudithook(deny_network)
     output = Path(sys.argv[2])
+    request = json.loads(Path(sys.argv[1]).read_text())
+    logs = (
+        session(
+            output.parent / "logs/events",
+            LogSettings.parse(request["logging"]),
+            os.environ.get("GEMMA_EXECUTION_ID") or new_run_id(),
+        )
+        if "logging" in request
+        else nullcontext()
+    )
     try:
-        write_json(output, synchronize(json.loads(Path(sys.argv[1]).read_text())))
+        with logs:
+            event("tracking.started", count=len(request["records"]))
+            write_json(output, synchronize(request))
+            event("tracking.completed")
     except BaseException as error:
         try:
             write_json(output, {"status": "failed", "error": f"{type(error).__name__}: {error}"})

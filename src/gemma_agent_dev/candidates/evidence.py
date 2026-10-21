@@ -6,7 +6,7 @@ import re
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any, NotRequired, TypedDict, cast
 
 from gemma_agent_dev.candidates.archive import extract_archive, validate_references
 from gemma_agent_dev.common.artifacts import file_hash
@@ -27,6 +27,10 @@ class CandidateEvidence(TypedDict):
     source_sha256: str
     cpu_run_id: str
     gpu_run_id: str
+    kind: NotRequired[str]
+    definition_sha256: NotRequired[str]
+    variant: NotRequired[str]
+    cell_manifests: NotRequired[dict[str, str]]
 
 
 class Candidate(TypedDict):
@@ -97,19 +101,36 @@ def checked_candidate(value: Any) -> Candidate:
     ):
         raise ValueError("Invalid Notebook output path")
     evidence = value["evidence"]
-    if not isinstance(evidence, dict) or set(evidence) != {
+    legacy_fields = {
         "cpu_manifest_sha256",
         "gpu_manifest_sha256",
         "source_sha256",
         "cpu_run_id",
         "gpu_run_id",
-    }:
+    }
+    paired_fields = legacy_fields | {"kind", "definition_sha256", "variant", "cell_manifests"}
+    if not isinstance(evidence, dict) or set(evidence) not in (legacy_fields, paired_fields):
         raise ValueError("Missing archived qualification evidence")
-    for name, item in evidence.items():
+    for name in legacy_fields:
+        item = evidence[name]
         if name.endswith("sha256"):
             checksum(item)
         elif not isinstance(item, str) or not re.fullmatch(r"[\w-]+", item):
             raise ValueError("Invalid evidence run ID")
+    if set(evidence) == paired_fields:
+        checksum(evidence["definition_sha256"])
+        if (
+            evidence["kind"] != "paired-experiment"
+            or not isinstance(evidence["variant"], str)
+            or not re.fullmatch(r"[\w-]+", evidence["variant"])
+            or not isinstance(evidence["cell_manifests"], dict)
+            or not evidence["cell_manifests"]
+        ):
+            raise ValueError("Invalid paired experiment evidence")
+        for task, digest in evidence["cell_manifests"].items():
+            if not isinstance(task, str) or not re.fullmatch(r"[\w-]+", task):
+                raise ValueError("Invalid evidence task")
+            checksum(digest)
     return cast(Candidate, value)
 
 

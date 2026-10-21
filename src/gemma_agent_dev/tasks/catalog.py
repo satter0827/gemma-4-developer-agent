@@ -2,7 +2,7 @@
 
 import json
 import re
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -26,21 +26,45 @@ class TaskSpec:
     source_roots: list[str]
     import_modules: list[str]
     dependency_wheels: dict[str, str]
+    sdk_dependency_wheels: dict[str, str] = field(default_factory=dict, kw_only=True)
+
+    def sdk_wheels(self) -> dict[str, str]:
+        """Combine shared and SDK-only wheels without changing native preparation."""
+        return {**self.dependency_wheels, **self.sdk_dependency_wheels}
+
+    def sdk_source(self) -> dict[str, Any]:
+        return {
+            "source_roots": self.source_roots,
+            "import_modules": self.import_modules,
+            "dependency_wheels": self.sdk_wheels(),
+        }
 
     @classmethod
     def parse(cls, raw: Any) -> "TaskSpec":
-        data = mapping(raw, {f.name for f in fields(cls)}, "task specification")
+        names = {f.name for f in fields(cls)}
+        if isinstance(raw, dict) and "sdk_dependency_wheels" not in raw:
+            raw = {**raw, "sdk_dependency_wheels": {}}
+        data = mapping(raw, names, "task specification")
         if not isinstance(data["instance_id"], str) or not re.fullmatch(
             r"[\w-]+", data["instance_id"]
         ):
             raise ValueError("Invalid task ID")
         checksum(data["snapshot_sha256"])
-        if not isinstance(data["dependency_wheels"], dict):
-            raise ValueError("Expected task dependency wheel hashes")
-        for name, digest in data["dependency_wheels"].items():
-            if not isinstance(name, str) or Path(name).name != name or not name.endswith(".whl"):
-                raise ValueError("Invalid dependency wheel name")
-            checksum(digest)
+        wheel_hashes: dict[str, str] = {}
+        for key in ("dependency_wheels", "sdk_dependency_wheels"):
+            if not isinstance(data[key], dict):
+                raise ValueError("Expected task dependency wheel hashes")
+            for name, digest in data[key].items():
+                if (
+                    not isinstance(name, str)
+                    or Path(name).name != name
+                    or not name.endswith(".whl")
+                ):
+                    raise ValueError("Invalid dependency wheel name")
+                checksum(digest)
+                if name in wheel_hashes and wheel_hashes[name] != digest:
+                    raise ValueError("Conflicting task dependency hashes")
+                wheel_hashes[name] = digest
         for key in ("test_paths", "source_roots", "import_modules"):
             items = data[key]
             if (
@@ -84,7 +108,7 @@ class TaskCatalog:
             raise ValueError("Duplicate catalog task IDs")
         wheel_hashes: dict[str, str] = {}
         for task in items:
-            for name, digest in task.dependency_wheels.items():
+            for name, digest in task.sdk_wheels().items():
                 if name in wheel_hashes and wheel_hashes[name] != digest:
                     raise ValueError("Conflicting task dependency hashes")
                 wheel_hashes[name] = digest
@@ -104,7 +128,7 @@ class TaskCatalog:
         expected = {
             name: digest
             for task_id in ids
-            for name, digest in self.tasks[task_id].dependency_wheels.items()
+            for name, digest in self.tasks[task_id].sdk_wheels().items()
         }
         for name, digest in expected.items():
             if file_hash(self.wheel_cache / name) != digest:

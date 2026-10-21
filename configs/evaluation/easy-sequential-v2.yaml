@@ -1,0 +1,37 @@
+experiment_id: easy-sequential-v2
+hypothesis: independent-public-api-verification
+pool: configs/tasks/easy.yaml
+diagnostic_config: configs/diagnostics/easy.yaml
+preflight_config: configs/evaluation/preflight-v2.yaml
+runtime_config: configs/evaluation/runtime.yaml
+evaluation_config: configs/evaluation/comparison.yaml
+variants:
+  workflow-v1: agent/workflow-v1.yaml
+  sequential-v1: agent/sequential-v1.yaml
+session:
+  job_timeout_seconds: 5400
+  cleanup_reserve_seconds: 300
+  per_evaluation_overhead_seconds: 60
+  enable_prefix_caching: false
+  quota_hours: 4
+  reserve_hours: 1
+  quota_per_wall_hour: 2
+  max_runs: 3
+change:
+  files:
+  - agent.yaml
+  - prompts/analyzer.md
+  - sub_agents/code_analyzer.yaml
+  - prompts/repair-v1.md
+  - prompts/verify-v1.md
+  - sub_agents/repair-v1.yaml
+  - sub_agents/verify-v1.yaml
+  agent_fields:
+  - agent_class
+  - name
+  - sub_agents
+  - model
+  - adapter
+  - instruction
+  - tools
+  - generate_content_config

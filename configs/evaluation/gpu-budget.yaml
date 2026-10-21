@@ -1,4 +1,4 @@
-quota_hours: 4
+quota_hours: 7
 reserve_hours: 1
 max_runs: 3
 runtime_config: configs/evaluation/runtime.yaml

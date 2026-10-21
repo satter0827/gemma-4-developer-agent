@@ -29,6 +29,7 @@ class SubmissionSettings:
     morning_start: str
     morning_cutoff: str
     competition_deadline: str
+    send_deadline: str
     monitoring_end: str
     manual_hold_hours: int
     daily_limit: int
@@ -58,6 +59,8 @@ class SubmissionSettings:
             raise ValueError("Invalid submission window")
         if timestamp(data["competition_deadline"]) >= timestamp(data["monitoring_end"]):
             raise ValueError("Monitoring must end after the competition deadline")
+        if timestamp(data["send_deadline"]) > timestamp(data["competition_deadline"]):
+            raise ValueError("Sending must stop before the competition deadline")
         for key in (
             "manual_hold_hours",
             "daily_limit",
@@ -76,15 +79,20 @@ class SubmissionSettings:
             project_path(root, seed)
         return cls(**data)
 
-    def send_window(self, now: datetime) -> bool:
+    def send_window(self, now: datetime, *, manual: bool = False) -> bool:
         local = now.astimezone(ZoneInfo(self.timezone))
-        return time.fromisoformat(self.morning_start) <= local.time() < time.fromisoformat(
-            self.morning_cutoff
-        ) and now < timestamp(self.competition_deadline)
+        return now < timestamp(self.send_deadline) and (
+            manual
+            or time.fromisoformat(self.morning_start)
+            <= local.time()
+            < time.fromisoformat(self.morning_cutoff)
+        )
 
-    def create_before(self, now: datetime) -> datetime:
+    def create_before(self, now: datetime, *, manual: bool = False) -> datetime:
+        if manual:
+            return timestamp(self.send_deadline)
         local = now.astimezone(ZoneInfo(self.timezone))
         return min(
             datetime.combine(local.date(), time.fromisoformat(self.morning_cutoff), local.tzinfo),
-            timestamp(self.competition_deadline),
+            timestamp(self.send_deadline),
         )

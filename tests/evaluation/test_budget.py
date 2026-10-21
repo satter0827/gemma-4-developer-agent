@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_gpu_admission_uses_quota_hours_and_stops_on_unknown_or_active_runs() -> None:
     budget = GpuBudget.load(ROOT, Path("configs/evaluation/gpu-budget.yaml"))
     assert budget.admit(consumed=0, remaining=26.5, completed_runs=0, active=False)["allowed"]
-    assert not budget.admit(consumed=2, remaining=24, completed_runs=2, active=False)["allowed"]
+    assert budget.admit(consumed=2.830299, remaining=24, completed_runs=2, active=False)["allowed"]
+    assert not budget.admit(consumed=5, remaining=24, completed_runs=2, active=False)["allowed"]
     assert not budget.admit(consumed=0, remaining=0.5, completed_runs=0, active=False)["allowed"]
     assert not budget.admit(consumed=0, remaining=20, completed_runs=0, active=True)["allowed"]
     assert not budget.admit(consumed=0, remaining=20, completed_runs=3, active=False)["allowed"]
@@ -23,11 +24,11 @@ def test_gpu_admission_uses_quota_hours_and_stops_on_unknown_or_active_runs() ->
         with pytest.raises(ValueError):
             budget.admit(consumed=value, remaining=20, completed_runs=0, active=False)
     with pytest.raises(ValueError):
-        GpuBudget.parse({**asdict(budget), "reserve_hours": 4})
+        GpuBudget.parse({**asdict(budget), "reserve_hours": 7})
 
 
 @pytest.mark.parametrize(
-    "consumed,active,code", [("0", False, 0), ("2", False, 1), ("0", True, 1), ("nan", False, 1)]
+    "consumed,active,code", [("0", False, 0), ("5", False, 1), ("0", True, 1), ("nan", False, 1)]
 )
 def test_cli_budget_admission_has_a_failure_exit_status(
     diagnostic_project: DiagnosticSettings,

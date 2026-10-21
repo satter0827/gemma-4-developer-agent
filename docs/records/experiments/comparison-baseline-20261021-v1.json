@@ -1,0 +1,131 @@
+{
+  "record_schema_version": 2,
+  "record_id": "comparison-baseline-20261021-v1",
+  "experiment_id": "comparison-baseline-v1",
+  "hypothesis": "explicit-repair-and-verification-procedure",
+  "status": "evaluated",
+  "task_ids": [
+    "fastapi_14786",
+    "fastapi_14360",
+    "requests_7315",
+    "requests_7309",
+    "rich_3052",
+    "rich_3180"
+  ],
+  "definition_sha256": "94217a108fa045b4de846f28d6bdf53106ebc01e060287f0530695e411b4ee14",
+  "source_sha256": "e60940fe17f9093c330108088fb657ea11b197e94eed831e431278c97657cf67",
+  "candidate_hashes": {
+    "baseline": "242f2e87897b31ce0440d2259e5a1e90e7fc4043f5101dfd78bfe5dfc6e36c61"
+  },
+  "metrics": {
+    "resolved": 2,
+    "total": 6,
+    "bootstrap_seconds": 59.48982760599998,
+    "controls_seconds": 41.373986909999985,
+    "model_startup_seconds": 865.0275690009998,
+    "evaluation_seconds": 1476.240892753,
+    "total_seconds": 2504.776576682
+  },
+  "interpretation": "固定6問で2問成功。複数課題の生成時間切れと1問のコンテキスト長超過を観測。",
+  "prompts": [
+    {
+      "prompt_id": "system-v1",
+      "path": "agent/prompts/system.md",
+      "sha256": "6f7c0cec8549322848cd145cf385cc419dfb38aaa95a65aad65d405b56e4bcb1"
+    }
+  ],
+  "observations": [
+    {
+      "task_id": "fastapi_14786",
+      "variant": "baseline",
+      "run_id": "20261021T010127Z-1111b3cc",
+      "resolved": false,
+      "duration_seconds": 302.74,
+      "status": "completed",
+      "termination": "time_limit_reached",
+      "implementation_changed": null,
+      "tool_argument_errors": 0
+    },
+    {
+      "task_id": "fastapi_14360",
+      "variant": "baseline",
+      "run_id": "20261021T010127Z-1111b3cc",
+      "resolved": false,
+      "duration_seconds": 147.28,
+      "status": "completed",
+      "termination": "context_window_exceeded",
+      "implementation_changed": null,
+      "tool_argument_errors": 1
+    },
+    {
+      "task_id": "requests_7315",
+      "variant": "baseline",
+      "run_id": "20261021T010127Z-1111b3cc",
+      "resolved": true,
+      "duration_seconds": 190.08,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 2
+    },
+    {
+      "task_id": "requests_7309",
+      "variant": "baseline",
+      "run_id": "20261021T010127Z-1111b3cc",
+      "resolved": true,
+      "duration_seconds": 231.35,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "task_id": "rich_3052",
+      "variant": "baseline",
+      "run_id": "20261021T010127Z-1111b3cc",
+      "resolved": false,
+      "duration_seconds": 303.55,
+      "status": "completed",
+      "termination": "time_limit_reached",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "task_id": "rich_3180",
+      "variant": "baseline",
+      "run_id": "20261021T010127Z-1111b3cc",
+      "resolved": false,
+      "duration_seconds": 301.16,
+      "status": "completed",
+      "termination": "time_limit_reached",
+      "implementation_changed": null,
+      "tool_argument_errors": 0
+    }
+  ],
+  "conditions": {
+    "max_tool_calls": 30,
+    "max_time_minutes": 5,
+    "max_turns": 50,
+    "model": "gemma-4-31b-it-qat-w4a16-ct",
+    "sdk_version": "0.2.11",
+    "verification_timeout_seconds": 300,
+    "max_model_len": 32768
+  },
+  "quota_hours": 1.395942777777777,
+  "decision": "inconclusive",
+  "parent_candidates": {
+    "baseline": "baseline-v1"
+  },
+  "assessments": [
+    {
+      "category": "budget",
+      "certainty": "confirmed",
+      "basis": "公式の生成終了理由で時間切れを確認。採点後の個別失敗理由とは区別する。"
+    },
+    {
+      "category": "verification",
+      "certainty": "hypothesis",
+      "basis": "実装差分と公開APIの検証が不足している可能性があり、担当分離と検証手順を個別に比較する。"
+    }
+  ]
+}

@@ -1,7 +1,5 @@
 """Validate immutable experiments and deterministic paired execution plans."""
 
-import hashlib
-import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -9,17 +7,12 @@ from typing import Any
 import yaml
 
 from gemma_agent_dev.candidates.archive import referenced_files
+from gemma_agent_dev.candidates.changes import ChangeScope
 from gemma_agent_dev.common.artifacts import file_hash
 from gemma_agent_dev.common.config import mapping, project_path
 from gemma_agent_dev.evaluation.config import EvaluationSettings, RuntimeSettings
 from gemma_agent_dev.evaluation.session_policy import VARIANTS_PER_PAIR, SessionPolicy
 from gemma_agent_dev.tasks.pools import TaskPool, identifier
-
-
-def content_hash(value: Any) -> str:
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -34,12 +27,17 @@ class Experiment:
     variants: dict[str, Path]
     session: SessionPolicy
     task_ids: list[str]
+    change: ChangeScope | None = None
 
     @classmethod
     def load(cls, root: Path, path: Path) -> "Experiment":
+        raw = yaml.safe_load(project_path(root, str(path)).read_text())
+        names = set(cls.__dataclass_fields__) - {"task_ids", "change"}
+        if isinstance(raw, dict) and "change" in raw:
+            names.add("change")
         data = mapping(
-            yaml.safe_load(project_path(root, str(path)).read_text()),
-            set(cls.__dataclass_fields__) - {"task_ids"},
+            raw,
+            names,
             "experiment",
         )
         identifier(data["experiment_id"])
@@ -71,6 +69,8 @@ class Experiment:
         data["task_ids"] = pool.selection(data["experiment_id"])
         data["variants"] = resolved
         data["session"] = SessionPolicy.parse(data["session"])
+        if "change" in data:
+            data["change"] = ChangeScope.parse(data["change"])
         evaluation = EvaluationSettings.load(data["evaluation_config"])
         runtime = RuntimeSettings.load(data["runtime_config"])
         if (
@@ -97,7 +97,7 @@ class Experiment:
         ]
         runtime = RuntimeSettings.load(self.runtime_config).as_dict()
         runtime.update(task_ids=self.task_ids, job_timeout_seconds=self.session.job_timeout_seconds)
-        return {
+        definition = {
             "experiment_id": self.experiment_id,
             "hypothesis": self.hypothesis,
             "task_ids": self.task_ids,
@@ -105,17 +105,7 @@ class Experiment:
             "variants": {
                 name: referenced_files(path.parent, path) for name, path in self.variants.items()
             },
-            "pool": {
-                "pool_id": pool.pool_id,
-                "difficulty": pool.difficulty,
-                "tasks_sha256": pool.tasks_sha256,
-                "sdk_version": pool.sdk_version,
-                "purpose": next(
-                    use["purpose"]
-                    for use in pool.uses
-                    if use["experiment_id"] == self.experiment_id
-                ),
-            },
+            "pool": pool.identity(self.experiment_id),
             "inputs": {
                 p.relative_to(root).as_posix(): file_hash(p)
                 for p in (self.diagnostic_config, self.preflight_config, *dependencies)
@@ -124,3 +114,6 @@ class Experiment:
             "evaluation": EvaluationSettings.load(self.evaluation_config).as_dict(),
             "session": asdict(self.session),
         }
+        if self.change is not None:
+            definition["change"] = self.change.as_dict()
+        return definition

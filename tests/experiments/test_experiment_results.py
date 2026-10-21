@@ -82,23 +82,23 @@ def test_only_matching_task_pairs_compared(
 ) -> None:
     update_outcome(paired_run, "base", resolved=left)
     update_outcome(paired_run, "new", resolved=right)
-    summary = summarize(paired_run)
+    summary = summarize(paired_run, max_bytes=2000000)
     assert summary["counts"][expected] == 1 and sum(summary["counts"].values()) == 1
 
 
 def test_errors_partial_and_not_run_are_separate(paired_run: Path) -> None:
     update_outcome(paired_run, "new", resolved=False, error="tool execution failed")
-    summary = summarize(paired_run)
+    summary = summarize(paired_run, max_bytes=2000000)
     assert summary["counts"]["errors"] == 1 and summary["cell_errors"] == 1
     data = json.loads(paired_run.read_text())
     data["cells"] = data["cells"][:1]
     data["actual_order"] = data["actual_order"][:1]
     write_json(paired_run, data)
-    assert summarize(paired_run)["counts"]["incomplete"] == 1
+    assert summarize(paired_run, max_bytes=2000000)["counts"]["incomplete"] == 1
     data["cells"] = []
     data["actual_order"] = []
     write_json(paired_run, data)
-    assert summarize(paired_run)["counts"]["not_run"] == 1
+    assert summarize(paired_run, max_bytes=2000000)["counts"]["not_run"] == 1
 
 
 @pytest.mark.parametrize(
@@ -129,4 +129,26 @@ def test_changed_or_incomparable_evidence_is_rejected(paired_run: Path, damage: 
         data["cells"][1]["sha256"] = file_hash(p)
     write_json(paired_run, data)
     with pytest.raises((ValueError, KeyError)):
-        summarize(paired_run)
+        summarize(paired_run, max_bytes=2000000)
+
+
+@pytest.mark.parametrize(
+    "error,termination,invalid",
+    [
+        ("Agent exceeded session timeout (5 min)", "time_limit_reached", False),
+        ("Agent exceeded tool call budget (30 calls)", "tool_limit_reached", False),
+        ("ContextWindowExceededError: limit reached", "context_window_exceeded", False),
+        ("Max number of llm calls limit of `50` exceeded", "turn_limit_reached", False),
+        ("Verification timed out", "verification_timeout", True),
+        ("Sandbox execution error", "execution_error", True),
+    ],
+)
+def test_generation_limits_remain_official_unsolved_results(
+    paired_run: Path, error: str, termination: str, invalid: bool
+) -> None:
+    update_outcome(paired_run, "base", resolved=False, error=error)
+    summary = summarize(paired_run, max_bytes=2000000)
+    assert summary["observations"][0]["termination"] == termination
+    assert summary["observations"][0]["resolved"] is False
+    assert summary["counts"]["errors" if invalid else "candidate_only"] == 1
+    assert summary["cell_errors"] == int(invalid)

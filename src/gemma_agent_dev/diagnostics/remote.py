@@ -11,13 +11,12 @@ from pathlib import Path
 from typing import Any
 
 from gemma_agent_dev.common.artifacts import file_hash, inventory, write_json
+from gemma_agent_dev.common.events import bundle_session, phase
 from gemma_agent_dev.common.junit import diagnostic_evidence
 from gemma_agent_dev.evaluation.config import RuntimeSettings
 
 
-def run(root: Path, provenance: dict[str, Any]) -> None:
-    from datetime import UTC, datetime
-
+def _run(root: Path, provenance: dict[str, Any], output: Path) -> None:
     from gemma_agent_dev.notebooks.environment import install_wheelhouse
 
     spec = json.loads((root / "diagnostics.json").read_text())
@@ -26,15 +25,13 @@ def run(root: Path, provenance: dict[str, Any]) -> None:
     runtime = RuntimeSettings.load(runtime_file)
     if set(runtime.task_ids) != set(spec["snapshots"]):
         raise ValueError("Diagnostic task list and snapshots disagree")
-    run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    output = Path(runtime.paths.output).parent / "diagnostics" / run_id
-    output.mkdir(parents=True, exist_ok=False)
     report: dict[str, Any] = {
         "kind": "diagnostic",
         "engine": "official-verify-task",
         "status": "running",
         "fingerprint": spec["fingerprint"],
         "provenance": provenance,
+        **provenance,
         "platform": platform.platform(),
         "python_version": platform.python_version(),
         "tasks_sha256": spec["tasks_sha256"],
@@ -202,3 +199,13 @@ async def verify_cases(
         print(f"{task_id}/{name}: {record}", flush=True)
         if not record["matched"]:
             raise RuntimeError(f"Official diagnostic outcome mismatch: {task_id}/{name}")
+
+
+def run(root: Path, provenance: dict[str, Any]) -> None:
+    from gemma_agent_dev.common.artifacts import new_run_id
+
+    spec = json.loads((root / "diagnostics.json").read_text())
+    output = Path(spec["runtime"]["paths"]["output"]).parent / "diagnostics" / new_run_id()
+    output.mkdir(parents=True, exist_ok=False)
+    with bundle_session(root, output, provenance), phase("diagnostic.remote"):
+        _run(root, provenance, output)

@@ -14,6 +14,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (root / "src/gemma_agent_dev").mkdir(parents=True)
     (root / "pyproject.toml").write_text(
         "[tool.gemma_agent_dev.results]\nmax_artifact_bytes=2000000\n"
+        '[tool.gemma_agent_dev.logging]\nfile_level="INFO"\nconsole_level="WARNING"\nmax_bytes=10485760\nbackup_count=3\n'
     )
     monkeypatch.chdir(root)
     return root
@@ -28,7 +29,7 @@ def import_run(project: Path, path: Path) -> Path:
 def test_empty_results_are_explicit(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["results"]) == 0
     assert "評価結果はまだありません" in capsys.readouterr().out
-    assert not (project / "artifacts").exists()
+    assert (project / "artifacts/logs").exists()
 
 
 def test_results_keep_incomplete_runs_separate(
@@ -104,7 +105,7 @@ def test_prepare_rejects_path_names(project: Path, name: str) -> None:
     with pytest.raises(SystemExit) as error:
         main(["prepare-kaggle", "--name", name])
     assert error.value.code == 2
-    assert not (project / "artifacts").exists()
+    assert (project / "artifacts/logs").exists()
 
 
 def test_artifact_requires_task(project: Path) -> None:

@@ -66,3 +66,14 @@ class TaskPool:
         if len(matches) != 1:
             raise ValueError("Experiment needs an explicit task-use record")
         return list(matches[0]["task_ids"])
+
+    def identity(self, experiment_id: str) -> dict[str, str]:
+        self.selection(experiment_id)
+        use = next(use for use in self.uses if use["experiment_id"] == experiment_id)
+        return {
+            "pool_id": self.pool_id,
+            "difficulty": self.difficulty,
+            "tasks_sha256": self.tasks_sha256,
+            "sdk_version": self.sdk_version,
+            "purpose": str(use["purpose"]),
+        }

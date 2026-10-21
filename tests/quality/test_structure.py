@@ -68,7 +68,15 @@ def test_bundle_rejects_missing_internal_dependencies(tmp_path: Path, statement:
 
 def test_bundle_hash_covers_launcher_and_is_reproducible(tmp_path: Path) -> None:
     shutil.copytree(ROOT / "src", tmp_path / "src")
-    modules = ("notebooks.entry", "notebooks.worker", "common.processes", "common.artifacts")
+    shutil.copyfile(ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
+    modules = (
+        "notebooks.entry",
+        "notebooks.worker",
+        "common.processes",
+        "common.artifacts",
+        "common.events",
+        "common.config",
+    )
     first, _ = payload(tmp_path, modules, {})
     assert payload(tmp_path, modules, {})[0] == first
     launcher = tmp_path / "src/gemma_agent_dev/notebooks/entry.py"
@@ -77,6 +85,7 @@ def test_bundle_hash_covers_launcher_and_is_reproducible(tmp_path: Path) -> None
 
 
 def test_notebook_uses_the_launcher_already_hashed_in_its_payload(tmp_path: Path) -> None:
+    shutil.copyfile(ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
     folder = tmp_path / "src/gemma_agent_dev/notebooks"
     folder.mkdir(parents=True)
     (folder.parent / "__init__.py").touch()

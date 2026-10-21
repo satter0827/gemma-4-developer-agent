@@ -1,0 +1,30 @@
+optimization_id: easy-gepa-v2
+hypothesis: general-workflow-reflection
+pool: configs/tasks/easy.yaml
+diagnostic_config: configs/diagnostics/easy.yaml
+preflight_config: configs/evaluation/preflight-v2.yaml
+runtime_config: configs/evaluation/runtime.yaml
+evaluation_config: configs/evaluation/comparison.yaml
+seed_agent: agent/workflow-v1.yaml
+prompt_path: prompts/workflow.md
+search_task_ids:
+- fastapi_14873
+- requests_7328
+- rich_3130
+selection_task_ids:
+- fastapi_14479
+- requests_7433
+- rich_3278
+environment: configs/environments/gepa.yaml
+limits:
+  max_metric_calls: 8
+  max_reflection_calls: 1
+  reflection_minibatch_size: 1
+  seed: 0
+  max_input_tokens: 8192
+  max_output_tokens: 2048
+  reflection_timeout_seconds: 120
+  cpu_timeout_seconds: 600
+  cleanup_reserve_seconds: 300
+  per_evaluation_overhead_seconds: 60
+gpu_budget: null

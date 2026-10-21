@@ -3,10 +3,9 @@
 import hashlib
 import json
 import subprocess
-from dataclasses import asdict
 from pathlib import Path
 
-from gemma_agent_dev.candidates.preflight import load_report
+from gemma_agent_dev.candidates.preflight import artifact_limit, load_report
 from gemma_agent_dev.common.artifacts import file_hash, write_json
 from gemma_agent_dev.common.sources import EVALUATION_MODULES
 from gemma_agent_dev.diagnostics.config import DiagnosticSettings
@@ -24,6 +23,7 @@ def prepare(
     verify_only: bool = False,
     report_path: Path,
     cpu_report: Path | None = None,
+    bundle_dataset: str | None = None,
 ) -> str:
     root = root.resolve()
     settings, report = load_report(root, report_path)
@@ -51,14 +51,9 @@ def prepare(
                 "sha256": report["candidate_sha256"],
                 "files": report["files"],
                 "max_unpacked_bytes": settings.max_unpacked_bytes,
+                "max_artifact_bytes": artifact_limit(root),
                 "snapshots": {i: catalog.tasks[i].snapshot_sha256 for i in config["task_ids"]},
-                "sources": {
-                    i: {
-                        k: asdict(catalog.tasks[i])[k]
-                        for k in ("source_roots", "import_modules", "dependency_wheels")
-                    }
-                    for i in config["task_ids"]
-                },
+                "sources": {i: catalog.tasks[i].sdk_source() for i in config["task_ids"]},
                 "tasks_sha256": catalog.tasks_sha256,
             }
         ).encode(),
@@ -120,7 +115,9 @@ def prepare(
         kernel_id,
         verify_only=verify_only,
         diagnostic=False,
+        bundle_dataset=bundle_dataset,
     )
+    (destination / "source-bundle.zip").write_bytes(payload)
     write_json(
         destination / "source-manifest.json",
         {

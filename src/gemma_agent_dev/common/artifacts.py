@@ -10,6 +10,12 @@ from typing import Any
 RUN_ID_RANDOM_HEX_LENGTH = 8
 
 
+def content_hash(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 def new_run_id() -> str:
     return (
         datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

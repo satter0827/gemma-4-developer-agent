@@ -262,7 +262,10 @@ def test_analysis_compares_actual_sdk_task_order_not_only_selected_ids(
     assert "actual_task_order" in report["comparison"]["differences"]
 
 
-def test_scratch_files_and_argument_failures_are_not_source_repairs(make_run: Any) -> None:
+@pytest.mark.parametrize("path_key", ["filepath", "file_path", "path"])
+def test_scratch_files_and_argument_failures_are_not_source_repairs(
+    make_run: Any, path_key: str
+) -> None:
     path = make_run()
     (path / "traces").mkdir()
     write_json(
@@ -274,14 +277,14 @@ def test_scratch_files_and_argument_failures_are_not_source_repairs(make_run: An
                     "tool_calls": [
                         {
                             "function_name": "write_file",
-                            "arguments": {"file_path": "reproduce_bug.py"},
+                            "arguments": {path_key: "reproduce_bug.py"},
                         }
                     ],
                     "observation": {"content": '{"error":"missing required content argument"}'},
                 },
                 {
                     "tool_calls": [
-                        {"function_name": "edit_file", "arguments": {"path": "rich/prompt.py"}}
+                        {"function_name": "edit_file", "arguments": {path_key: "rich/prompt.py"}}
                     ],
                     "observation": {"content": '{"status":"ok"}'},
                 },

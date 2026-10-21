@@ -1,0 +1,73 @@
+{
+  "record_schema_version": 2,
+  "record_id": "initial-two-tasks-20261020-v1",
+  "experiment_id": "initial-two-tasks-v1",
+  "hypothesis": "initial-public-task-evaluation",
+  "status": "evaluated",
+  "task_ids": [
+    "fastapi_15661",
+    "fastapi_15588"
+  ],
+  "definition_sha256": "4f8344748e5c5194ac7296f5317bdbd4a3ff335cbeaf28af0cb1290471dabaec",
+  "source_sha256": "40bef169a428507e4b61ec1d2163635e21eeb677596927550bf3d8d81df9ff6b",
+  "candidate_hashes": {
+    "initial": "2d8f8407e1f4d8737dd68311873911bfc4368b982ce4e8e95081fa786b359a29"
+  },
+  "metrics": {
+    "resolved": 0,
+    "total": 2
+  },
+  "interpretation": "初期2課題は未解決。当時の個別証拠には現行方式のハッシュ封印がなく、固定6問の比較へ合算しない。",
+  "prompts": [
+    {
+      "prompt_id": "system-v1",
+      "path": "agent/prompts/system.md",
+      "sha256": "6f7c0cec8549322848cd145cf385cc419dfb38aaa95a65aad65d405b56e4bcb1"
+    }
+  ],
+  "observations": [
+    {
+      "task_id": "fastapi_15661",
+      "variant": "initial",
+      "run_id": "20261020T072100Z-e679cea7",
+      "resolved": false,
+      "duration_seconds": 301.93,
+      "status": "completed",
+      "termination": "time_limit_reached",
+      "implementation_changed": null,
+      "tool_argument_errors": 1
+    },
+    {
+      "task_id": "fastapi_15588",
+      "variant": "initial",
+      "run_id": "20261020T072100Z-e679cea7",
+      "resolved": false,
+      "duration_seconds": 182.78,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    }
+  ],
+  "conditions": {
+    "max_tool_calls": 30,
+    "max_time_minutes": 5,
+    "max_turns": 50,
+    "model": "gemma-4-31b-it-qat-w4a16-ct",
+    "sdk_version": "0.2.11",
+    "verification_timeout_seconds": 300,
+    "max_model_len": 32768
+  },
+  "quota_hours": null,
+  "decision": "inconclusive",
+  "parent_candidates": {
+    "initial": "initial-baseline-v1"
+  },
+  "assessments": [
+    {
+      "category": "budget",
+      "certainty": "confirmed",
+      "basis": "FastAPI 15661は当時の公式結果で生成5分の時間切れ。15588の未解決とは原因を区別する。"
+    }
+  ]
+}

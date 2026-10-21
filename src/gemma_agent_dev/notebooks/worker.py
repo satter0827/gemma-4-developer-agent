@@ -10,10 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from gemma_agent_dev.common.artifacts import new_run_id, write_json
+from gemma_agent_dev.common.events import bundle_session, context, phase
 from gemma_agent_dev.common.processes import process_group
 
 
-def run_bounded(
+def _run_bounded(
     root: Path,
     provenance: dict[str, Any],
     *,
@@ -22,9 +23,8 @@ def run_bounded(
     timeout: float,
     progress_interval: float,
     storage: Path,
+    output: Path,
 ) -> None:
-    output = storage / "jobs" / new_run_id()
-    output.mkdir(parents=True)
     start = time.monotonic()
     receipt: dict[str, Any] = {
         "status": "running",
@@ -72,12 +72,20 @@ def run_bounded(
         failure = error
         receipt.update(status="failed", error=f"{type(error).__name__}: {error}")
         try:
-            for path in list((storage / "results").rglob("manifest.json")) + list(
-                (storage / "results").rglob("session.json")
+            for path in (
+                list((storage / "results").rglob("manifest.json"))
+                + list((storage / "results").rglob("session.json"))
+                + list((storage / "results").rglob("search.json"))
+                + list((storage / "diagnostics").rglob("report.json"))
             ):
-                manifest = json.loads(path.read_text())
+                try:
+                    manifest = json.loads(path.read_text())
+                except (OSError, ValueError):
+                    continue
                 if (
-                    manifest.get("status") == "running"
+                    isinstance(manifest, dict)
+                    and manifest.get("status") == "running"
+                    and manifest.get("job_id") == output.name
                     and manifest.get("source_sha256") == provenance["source_sha256"]
                 ):
                     manifest.update(status="failed", error=receipt["error"], phase="watchdog")
@@ -97,11 +105,45 @@ def run_bounded(
         raise failure
 
 
+def run_bounded(
+    root: Path,
+    provenance: dict[str, Any],
+    *,
+    verify_only: bool,
+    diagnostic: bool,
+    timeout: float,
+    progress_interval: float,
+    storage: Path,
+) -> None:
+    output = storage / "jobs" / new_run_id()
+    output.mkdir(parents=True)
+    provenance = {**provenance, "job_id": output.name}
+    with (
+        bundle_session(root, output, provenance),
+        context(session_id=output.name, job_id=output.name),
+        phase("notebook"),
+    ):
+        _run_bounded(
+            root,
+            provenance,
+            verify_only=verify_only,
+            diagnostic=diagnostic,
+            timeout=timeout,
+            progress_interval=progress_interval,
+            storage=storage,
+            output=output,
+        )
+
+
 def main() -> None:
     root = Path(sys.argv[1])
     provenance = json.loads(sys.argv[2])
     if bool(int(sys.argv[-1])):
         importlib.import_module("gemma_agent_dev.diagnostics.remote").run(root, provenance)
+    elif (root / "optimization.json").is_file():
+        importlib.import_module("gemma_agent_dev.evaluation.optimization_runtime").run(
+            root, provenance, verify_only=bool(int(sys.argv[-2]))
+        )
     elif (root / "experiment.json").is_file():
         importlib.import_module("gemma_agent_dev.evaluation.session").run(
             root, provenance, verify_only=bool(int(sys.argv[-2]))

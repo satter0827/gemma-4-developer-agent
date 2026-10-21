@@ -3,7 +3,7 @@
 import math
 import re
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any, NotRequired, TypedDict, cast
 
 from gemma_agent_dev.candidates.evidence import Candidate, checked_candidate
 from gemma_agent_dev.evaluation.results import read_object
@@ -19,6 +19,7 @@ class SubmissionAttempt(TypedDict):
     started_at: str
     status: str
     submission_id: int | None
+    mode: NotRequired[str]
 
 
 class SubmissionRecord(TypedDict):
@@ -78,7 +79,12 @@ def validate_state(value: Any, competition: str) -> SubmissionState:
     for attempt in value["attempts"]:
         if (
             not isinstance(attempt, dict)
-            or set(attempt) != {"candidate", "token", "started_at", "status", "submission_id"}
+            or set(attempt)
+            not in (
+                {"candidate", "token", "started_at", "status", "submission_id"},
+                {"candidate", "token", "started_at", "status", "submission_id", "mode"},
+            )
+            or attempt.get("mode", "automatic") not in {"automatic", "manual"}
             or attempt["candidate"] not in ids
             or attempt["status"] not in {"creating", "accepted", "not_accepted"}
             or not isinstance(attempt["token"], str)

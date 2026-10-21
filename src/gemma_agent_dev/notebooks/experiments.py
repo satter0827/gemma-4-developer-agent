@@ -6,16 +6,17 @@ import json
 import os
 import tempfile
 import zipfile
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from gemma_agent_dev.candidates.preflight import artifact_limit
 from gemma_agent_dev.common.artifacts import file_hash, write_json
 from gemma_agent_dev.common.processes import command
 from gemma_agent_dev.common.sources import EXPERIMENT_MODULES
 from gemma_agent_dev.diagnostics.config import DiagnosticSettings
 from gemma_agent_dev.evaluation.config import RuntimeSettings
 from gemma_agent_dev.evaluation.experiment_preparation import load_preparation
+from gemma_agent_dev.evaluation.experiment_results import load_cpu
 from gemma_agent_dev.evaluation.sdk_checks import (
     fingerprint,
     installed_state,
@@ -28,39 +29,6 @@ from gemma_agent_dev.notebooks.bundle import write_notebook
 from gemma_agent_dev.tasks.catalog import TaskCatalog
 
 
-def load_cpu(
-    path: Path, digest: str, definition_hash: str, task_ids: list[str], variants: dict[str, str]
-) -> dict[str, Any]:
-    report = json.loads(path.read_text())
-    if (
-        report.get("kind") != "experiment-verification"
-        or report.get("status") != "completed"
-        or report.get("source_sha256") != digest
-        or report.get("definition_sha256") != definition_hash
-        or report.get("task_ids") != task_ids
-        or report.get("variants") != variants
-        or set(report.get("controls", {})) != set(variants)
-    ):
-        raise ValueError("CPU proof does not match the complete experiment bundle")
-    for variant, files in report["controls"].items():
-        if "controls.json" not in files or not any(name.endswith("origins.json") for name in files):
-            raise ValueError("CPU proof is missing source and control evidence")
-        for name, expected in files.items():
-            target = (path.parent / "controls" / variant / name).resolve()
-            if not target.is_relative_to(path.parent.resolve()) or file_hash(target) != expected:
-                raise ValueError("CPU proof artifacts changed")
-        records = json.loads((path.parent / "controls" / variant / "controls.json").read_text())
-        if [r["instance_id"] for r in records] != task_ids or any(
-            r["unmodified"]["resolved"] is not False
-            or r["reference"]["resolved"] is not True
-            or r["reference"].get("error")
-            or r["unmodified"].get("error")
-            for r in records
-        ):
-            raise ValueError("CPU controls are incomplete or do not discriminate fixes")
-    return dict(report)
-
-
 def prepare(
     root: Path,
     destination: Path,
@@ -69,6 +37,7 @@ def prepare(
     verify_only: bool,
     cpu_report: Path | None,
     quota: dict[str, Any] | None = None,
+    bundle_dataset: str | None = None,
 ) -> str:
     experiment, report = load_preparation(root, report_path)
     diagnostic = DiagnosticSettings.load(root, experiment.diagnostic_config)
@@ -78,6 +47,7 @@ def prepare(
         task_ids=experiment.task_ids, job_timeout_seconds=experiment.session.job_timeout_seconds
     )
     spec = {
+        "max_artifact_bytes": artifact_limit(root),
         "native_controls_sha256": report["controls"]["sha256"],
         "local_diagnostic_config": str(experiment.diagnostic_config.relative_to(root)),
         "definition": report["definition"],
@@ -85,13 +55,7 @@ def prepare(
         "variants": report["variants"],
         "tasks_sha256": catalog.tasks_sha256,
         "snapshots": {i: catalog.tasks[i].snapshot_sha256 for i in experiment.task_ids},
-        "sources": {
-            i: {
-                k: asdict(catalog.tasks[i])[k]
-                for k in ("source_roots", "import_modules", "dependency_wheels")
-            }
-            for i in experiment.task_ids
-        },
+        "sources": {i: catalog.tasks[i].sdk_source() for i in experiment.task_ids},
     }
     inputs = {
         "runtime.json": json.dumps(runtime).encode(),
@@ -137,6 +101,7 @@ def prepare(
         runtime["verification_kernel_id"] if verify_only else runtime["kernel_id"],
         verify_only=verify_only,
         diagnostic=False,
+        bundle_dataset=bundle_dataset,
     )
     (destination / "source-bundle.zip").write_bytes(content)
     write_json(

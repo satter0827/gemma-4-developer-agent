@@ -9,8 +9,10 @@ import sys
 from pathlib import Path
 
 from gemma_agent_dev.common.artifacts import file_hash, write_json
+from gemma_agent_dev.common.events import logged
 
 
+@logged("dependencies.install")
 def install_wheelhouse(
     directory: Path, output: Path, startup_timeout: int, expected: dict[str, str]
 ) -> None:

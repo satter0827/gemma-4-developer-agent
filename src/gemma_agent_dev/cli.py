@@ -5,6 +5,8 @@ import subprocess
 import sys
 
 from gemma_agent_dev.candidates import cli as candidates
+from gemma_agent_dev.common.artifacts import new_run_id
+from gemma_agent_dev.common.events import LogSettings, event, phase, session
 from gemma_agent_dev.common.paths import project_root
 from gemma_agent_dev.diagnostics import cli as diagnostics
 from gemma_agent_dev.evaluation import cli as evaluation
@@ -26,7 +28,15 @@ def main(argv: list[str] | None = None) -> int:
     submission.configure(commands)
     args = parser.parse_args(argv)
     try:
-        return int(args.handler(project_root(), args))
+        root = project_root()
+        execution_id = new_run_id()
+        with session(root / "artifacts/logs" / execution_id, LogSettings.load(root), execution_id):
+            try:
+                with phase("command", stage=args.command):
+                    return int(args.handler(root, args))
+            except BaseException:
+                event("command.exception", level="ERROR", exception=True)
+                raise
     except (
         OSError,
         ValueError,

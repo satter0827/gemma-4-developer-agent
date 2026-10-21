@@ -60,14 +60,31 @@ def test_notebook_watchdog_stops_worker_descendants_and_preserves_failure(
     (pkg / "notebooks").mkdir(parents=True)
     (pkg / "notebooks/__init__.py").touch()
     (pkg / "notebooks/worker.py").write_text(
-        "import subprocess,sys,time\n"
+        "import subprocess,sys,time,json\nfrom pathlib import Path\n"
+        + f"folder=Path({str(tmp_path / 'artifacts/results/current')!r})\n"
+        + "folder.mkdir(parents=True)\n"
+        + "for name in ('manifest.json','session.json','search.json'):\n"
+        + "    value={'status':'running',**json.loads(sys.argv[2])}\n"
+        + "    (folder/name).write_text(json.dumps(value))\n"
+        + "done=folder/'done';done.mkdir()\n"
+        + "(done/'manifest.json').write_text(json.dumps({**value,'status':'completed'}))\n"
+        + f"diagnostic=Path({str(tmp_path / 'artifacts/diagnostics/current')!r})\n"
+        + "diagnostic.mkdir(parents=True)\n"
+        + "(diagnostic/'report.json').write_text(json.dumps(value))\n"
         + f'subprocess.Popen([sys.executable,"-c",{child!r}])\n'
         + ("time.sleep(30)\n" if timeout else 'print("finished",flush=True)\n')
     )
     storage = tmp_path / "artifacts"
     results = storage / "results/run"
     results.mkdir(parents=True)
-    write_json(results / "manifest.json", {"status": "running", "source_sha256": "fixture"})
+    for name in ("manifest.json", "session.json", "search.json"):
+        write_json(
+            results / name, {"status": "running", "source_sha256": "fixture", "job_id": "previous"}
+        )
+    unchanged = {p: p.read_bytes() for p in results.iterdir()}
+    write_json(results / "completed.json", {"status": "completed", "source_sha256": "fixture"})
+    (results / "corrupt").mkdir()
+    (results / "corrupt/manifest.json").write_text("invalid json")
     if timeout:
         with pytest.raises(subprocess.TimeoutExpired):
             run_bounded(
@@ -79,7 +96,14 @@ def test_notebook_watchdog_stops_worker_descendants_and_preserves_failure(
                 progress_interval=0.05,
                 storage=storage,
             )
-        assert json.loads((results / "manifest.json").read_text())["phase"] == "watchdog"
+        assert all(
+            json.loads((storage / "results/current" / name).read_text())["phase"] == "watchdog"
+            for name in ("manifest.json", "session.json", "search.json")
+        )
+        assert (
+            json.loads((storage / "diagnostics/current/report.json").read_text())["phase"]
+            == "watchdog"
+        )
     else:
         run_bounded(
             source,
@@ -90,6 +114,11 @@ def test_notebook_watchdog_stops_worker_descendants_and_preserves_failure(
             progress_interval=0.05,
             storage=storage,
         )
+    assert all(p.read_bytes() == value for p, value in unchanged.items())
+    assert (
+        json.loads((storage / "results/current/done/manifest.json").read_text())["status"]
+        == "completed"
+    )
     import time
 
     time.sleep(2.1)
