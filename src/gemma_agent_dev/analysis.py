@@ -26,7 +26,7 @@ TEST_STATUSES = ("passed", "failed", "errors", "skipped", "xfailed", "xpassed")
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
-def reported_test_counts(text: str) -> dict[str, int] | None:
+def reported_test_counts(text: str) -> dict[str, int | None] | None:
     """Read the last pytest summary as reported evidence, never as an official grade."""
     if "[Display truncated]" in text:
         return None
@@ -45,8 +45,10 @@ def reported_test_counts(text: str) -> dict[str, int] | None:
         if collection:
             counts["errors"] = 0
         counts["reported_total"] = sum(counts[status] for status in TEST_STATUSES)
-        counts["executed"] = counts["reported_total"] - counts["skipped"]
-        return counts
+        # A passed or failed case can also have a teardown error in this summary.
+        # Without case-level evidence those outcomes cannot be deduplicated.
+        executed = None if counts["errors"] else counts["reported_total"] - counts["skipped"]
+        return {**counts, "executed": executed}
     return None
 
 

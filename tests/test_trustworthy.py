@@ -838,6 +838,7 @@ def test_catalog_cannot_pin_two_hashes_for_the_same_wheel(
     [
         ("6 failed, 18 passed in 1.24s", {"failed": 6, "passed": 18, "executed": 24}),
         ("1 skipped in 0.01s", {"skipped": 1, "executed": 0}),
+        ("1 passed, 1 error in 0.01s", {"passed": 1, "errors": 1, "executed": None}),
         ("no tests ran in 0.01s", {"reported_total": 0, "executed": 0}),
         (
             "ERROR collecting tests/test_a.py\n1 error in 0.03s",
@@ -847,7 +848,7 @@ def test_catalog_cannot_pin_two_hashes_for_the_same_wheel(
     ],
 )
 def test_analysis_reads_reported_counts_without_replacing_official_grade(
-    make_run: Any, tmp_path: Path, summary: str, expected: dict[str, int] | None
+    make_run: Any, tmp_path: Path, summary: str, expected: dict[str, int | None] | None
 ) -> None:
     path = make_run()
     folder = path / "test_outputs"
