@@ -102,4 +102,8 @@ KaggleのSaveKernelは1MB以上のソースを拒否します。生成時はUTF-
 
 大きいバンドルには`prepare-kaggle`の`--bundle-dataset OWNER/PRIVATE_DATASET`を指定します。この指定だけではアップロードも実行も行いません。生成先の`source-bundle.zip`を、別のアップロード用ディレクトリへ`source-bundle.bin`として同一バイト列でコピーします。`dataset-metadata.json`のIDは指定したDatasetに揃え、`kaggle datasets create -p UPLOAD_DIRECTORY`でPrivateとして登録します。`--public`は指定しません。ZIPの自動展開を避けるため、転送名は`.bin`です。
 
+Private Datasetのファイルは`/kaggle/input/DATASET_NAME/source-bundle.bin`へ配置されます。URLの`OWNER/DATASET_NAME`と入力ディレクトリを区別してください。
+
 Datasetはソースハッシュごとに新しいIDを使い、作成後は更新しません。Privateであることと、取得した`source-bundle.bin`のSHA-256が生成記録の`source_sha256`に一致することを確認してからNotebookを起動します。Notebookは入力を読み込んだ後にもハッシュを照合します。CPUとGPUで同じバンドルを使い、候補ZIPを再生成しません。
+
+固定済みソースの転送だけをやり直す場合は、保存済みのソースZIPとmanifestを原本にします。共通のNotebook生成処理で入力位置を補正し、ZIPと候補は再生成しません。バンドル内の実行コードが同一であること、入力範囲、元のSHA-256、CPU完了証拠、最新の残枠を照合します。現在のチェックアウトの品質検査は別に実施します。バンドル内のコードや条件を変える場合は、新しい固定とCPU検証が必要です。

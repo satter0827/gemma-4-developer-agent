@@ -1,0 +1,123 @@
+{
+  "record_schema_version": 2,
+  "record_id": "easy-gepa-v2-cpu-20261022",
+  "experiment_id": "easy-gepa-v2",
+  "hypothesis": "general-workflow-reflection",
+  "status": "cpu-verified",
+  "task_ids": [
+    "fastapi_14873",
+    "requests_7328",
+    "rich_3130",
+    "fastapi_14479",
+    "requests_7433",
+    "rich_3278"
+  ],
+  "definition_sha256": "31e9efa636999f1bbe85490fc28230de58cbfeec01335694569c2d90fe17a251",
+  "source_sha256": "af7357616715a3c38a87d0f33c2c131f12c3da7e4484823b04171752747bd43f",
+  "candidate_hashes": {
+    "workflow-v1": "411737ddf6b8f774a6edc6825bafa3f7498b121c7bb86c43021eae066f984dfa"
+  },
+  "metrics": {
+    "native_controls_matched": 12,
+    "synthetic_metric_calls": 8,
+    "synthetic_reflection_calls": 1,
+    "synthetic_candidates": 2,
+    "gpu_evaluations": 0
+  },
+  "interpretation": "実GEPA 0.1.4と固定SDKで合成8評価・指示生成1回・候補2件のコンパイルを確認。実モデルの指示生成と精度は未評価、採用なし。",
+  "prompts": [
+    {
+      "prompt_id": "workflow-v1",
+      "path": "agent/prompts/workflow.md",
+      "sha256": "6ec9796d3388e5e08131dbfbbe4636787938f8f73730d583f2c8814f8a32f1d9"
+    }
+  ],
+  "observations": [
+    {
+      "task_id": "fastapi_14873",
+      "variant": "workflow-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "requests_7328",
+      "variant": "workflow-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "rich_3130",
+      "variant": "workflow-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "fastapi_14479",
+      "variant": "workflow-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "requests_7433",
+      "variant": "workflow-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "task_id": "rich_3278",
+      "variant": "workflow-v1",
+      "run_id": null,
+      "resolved": null,
+      "duration_seconds": null,
+      "status": "not_run",
+      "termination": "unknown",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    }
+  ],
+  "conditions": {
+    "max_tool_calls": 30,
+    "max_time_minutes": 5,
+    "max_turns": 50,
+    "sdk_version": "0.2.11",
+    "verification_timeout_seconds": 300,
+    "max_model_len": 32768
+  },
+  "quota_hours": null,
+  "decision": "unevaluated",
+  "parent_candidates": {
+    "workflow-v1": "workflow-v1"
+  },
+  "assessments": [
+    {
+      "category": "verification",
+      "certainty": "confirmed",
+      "basis": "固定環境で合成応答による探索と候補コンパイルが成立。GPU・実モデル・正式提出は実行していない。"
+    }
+  ]
+}

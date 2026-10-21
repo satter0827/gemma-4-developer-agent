@@ -157,10 +157,7 @@ def test_source_limit_is_checked_before_writing_and_external_assets_keep_hash(
         == provenance["source_sha256"]
     )
     script = (tmp_path / "external/run.py").read_text()
-    assert (
-        "main(None" in script
-        and "/kaggle/input/datasets/owner/private-source/source-bundle.bin" in script
-    )
+    assert "main(None" in script and "/kaggle/input/private-source/source-bundle.bin" in script
     assert (
         json.loads((tmp_path / "external/kernel-metadata.json").read_text())["dataset_sources"][-1]
         == "owner/private-source"

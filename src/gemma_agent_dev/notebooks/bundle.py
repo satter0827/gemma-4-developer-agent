@@ -51,7 +51,9 @@ def write_notebook(
         raise ValueError("Expected an owner/dataset source")
     encoded = None if bundle_dataset else base64.b64encode(lzma.compress(content)).decode()
     source_path = (
-        f"/kaggle/input/datasets/{bundle_dataset}/source-bundle.bin" if bundle_dataset else None
+        f"/kaggle/input/{bundle_dataset.split('/', 1)[1]}/source-bundle.bin"
+        if bundle_dataset
+        else None
     )
     script = entry + (
         "\nif __name__ == '__main__':\n"

@@ -12,3 +12,5 @@
 過去の記録にあるパスとコマンドは当時の配置です。現在の操作は運用文書に従います。記録の値や過去の生成物は変更せず、新しい検証を別に残します。
 
 旧`configs/evaluation/5min.yaml`は過去の5分・10ツール条件、旧`5min-30tools.yaml`は固定6問の5分・30ツール比較条件でした。前者は現行プロファイルから参照されず削除し、後者は`configs/evaluation/comparison.yaml`へ移しました。正式提出物の`agent/eval_config.yaml`は維持します。以前の生成予算・LoRA比較の結果は評価・診断記録へ保持しています。
+
+CPUで確認した条件と観測は、[検証Skill](experiments/easy-skills-v3-cpu-20261022.json)と[GEPAの合成探索](experiments/easy-gepa-v2-cpu-20261022.json)にも記載しています。モデルによる解決率は未評価です。
