@@ -34,3 +34,12 @@ jobs:
             artifacts/coverage/summary.md
             artifacts/coverage/html/
           if-no-files-found: error
+      - name: Check submission SDK contract
+        env:
+          UV_PROJECT_ENVIRONMENT: artifacts/venv
+          UV_CACHE_DIR: artifacts/cache/uv
+          PYTHONPYCACHEPREFIX: artifacts/cache/python
+        run: |
+          uv sync --frozen --group submission --no-editable
+          uv run --no-sync python -c 'import kagglesdk.kaggle_client'
+          uv run --no-sync pytest -q tests/test_submission_api.py -k pinned_sdk --basetemp=artifacts/tmp/submission-sdk

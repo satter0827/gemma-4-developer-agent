@@ -66,3 +66,5 @@ make cli ARGS='submission --config configs/submission.yaml resolve --token ATTEM
 GitHubの通知設定でActionsを「失敗したワークフローのみ通知」に設定します。アカウント全体に影響する設定のため自動変更しません。Codex側の定期監視は追加しません。[通知設定](https://docs.github.com/en/subscriptions-and-notifications/how-tos/managing-github-actions-notifications)
 
 認証情報は提出ワークフローだけに渡します。ZIPとAPIの生レスポンスは一時領域で処理し、Actionsの成果物・キャッシュへアップロードしません。通常CIは合成入力だけを使い、Kaggleへの送信を行いません。
+
+保存済みNotebookと提出履歴のZIPは、固定版SDKがリダイレクトを追従したHTTP応答から取得します。読み込み中にサイズ上限を確認し、受信が完了してから保存先へ反映します。サイズ超過・HTTPエラー・通信中断では不完全なZIPを削除し、既存ファイルを保持します。認証から取得完了までの時間は、転送用ワーカーの実行期限で制限します。

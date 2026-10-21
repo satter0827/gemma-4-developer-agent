@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from gemma_agent_dev.submission_config import SubmissionSettings, timestamp
 KAGGLE_VERSION = "2.2.4"
 READ_OPERATIONS = frozenset({"history", "limits", "kernel", "download"})
 WRITE_OPERATIONS = frozenset({"upload", "create"})
+DOWNLOAD_CHUNK_BYTES = 64 * 1024
 
 
 class KaggleGateway:
@@ -67,6 +69,27 @@ def utc_date(value: Any) -> str:
     return value.replace(tzinfo=value.tzinfo or UTC).astimezone(UTC).isoformat()
 
 
+def save_download(response: Any, destination: Path, max_bytes: int) -> dict[str, int]:
+    # In the pinned SDK, HttpRedirect.prepare_from returns the requests.Response.
+    # Its HTTP session already follows redirects and leaves the body streamed.
+    with contextlib.closing(response):
+        response.raise_for_status()
+        length = response.headers.get("Content-Length")
+        if length is not None and int(length) > max_bytes:
+            raise ValueError("Downloaded submission exceeds the size limit")
+        with tempfile.TemporaryDirectory(dir=destination.parent) as directory:
+            partial = Path(directory) / "submission.zip"
+            size = 0
+            with partial.open("wb") as output:
+                for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_BYTES):
+                    size += len(chunk)
+                    if size > max_bytes:
+                        raise ValueError("Downloaded submission exceeds the size limit")
+                    output.write(chunk)
+            partial.replace(destination)
+    return {"bytes": size}
+
+
 def dispatch(api: Any, client: Any, data: dict[str, Any], types: Any, kernel_types: Any) -> Any:
     operation, competition = data["operation"], data["competition"]
     service = client.competitions.competition_api_client
@@ -112,12 +135,7 @@ def dispatch(api: Any, client: Any, data: dict[str, Any], types: Any, kernel_typ
             request = types.ApiDownloadSubmissionRequest()
             request.submission_id = data["id"]
             response = service.download_submission(request)
-        response.raise_for_status()
-        content = response.content
-        if len(content) > data["max_bytes"]:
-            raise ValueError("Downloaded submission exceeds the size limit")
-        Path(data["destination"]).write_bytes(content)
-        return {"bytes": len(content)}
+        return save_download(response, Path(data["destination"]), data["max_bytes"])
     if operation not in WRITE_OPERATIONS or data.get("execute") is not True:
         raise ValueError("Write operation denied")
     if operation == "upload":

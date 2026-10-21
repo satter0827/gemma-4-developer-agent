@@ -1,5 +1,7 @@
 """Verify SDK operation boundaries without uploading or creating a real submission."""
 
+import importlib.metadata
+import io
 import json
 import subprocess
 import sys
@@ -50,7 +52,12 @@ def test_read_operations(tmp_path: Path) -> None:
             next_page_token="page2" if len(calls) == 1 else "",
         )
 
-    content = NS(content=b"synthetic", raise_for_status=lambda: None)
+    content = NS(
+        headers={"Content-Length": "9"},
+        iter_content=lambda **_: iter((b"syn", b"thetic")),
+        raise_for_status=lambda: None,
+        close=lambda: None,
+    )
     service = NS(
         list_submissions=history,
         get_submission_limits=lambda _: NS(num_allowed_now=0, num_today=1),
@@ -91,6 +98,132 @@ def test_read_operations(tmp_path: Path) -> None:
         api.dispatch(None, client, {**data, "max_pages": 1}, types(), types())
     with pytest.raises(ValueError):
         api.utc_date(None)
+
+
+@pytest.mark.parametrize("failure", ["header", "stream", "read", "status"])
+def test_failed_download_is_closed_and_preserves_destination(tmp_path: Path, failure: str) -> None:
+    destination = tmp_path / "submission.zip"
+    destination.write_bytes(b"existing")
+    consumed, closed = [], []
+
+    def chunks(*, chunk_size: int) -> Any:
+        assert chunk_size == api.DOWNLOAD_CHUNK_BYTES
+        for chunk in (b"123", b"456", b"unread"):
+            consumed.append(chunk)
+            yield chunk
+            if failure == "read":
+                raise OSError("Connection interrupted")
+
+    def check_status() -> None:
+        if failure == "status":
+            raise OSError("HTTP failure")
+
+    response = NS(
+        headers={"Content-Length": "100"} if failure == "header" else {},
+        iter_content=chunks,
+        raise_for_status=check_status,
+        close=lambda: closed.append(True),
+    )
+    with pytest.raises((ValueError, OSError)):
+        api.save_download(response, destination, 5)
+    assert closed == [True]
+    assert destination.read_bytes() == b"existing"
+    assert list(tmp_path.iterdir()) == [destination]
+    expected = [] if failure in {"header", "status"} else [b"123"]
+    if failure == "stream":
+        expected.append(b"456")
+    assert consumed == expected
+
+
+@pytest.mark.parametrize("headers", [{}, {"Content-Length": "5"}, {"Content-Length": "1"}])
+def test_download_counts_streamed_bytes_at_the_limit(
+    tmp_path: Path, headers: dict[str, str]
+) -> None:
+    closed = []
+    response = NS(
+        headers=headers,
+        iter_content=lambda **_: iter((b"12", b"", b"345")),
+        raise_for_status=lambda: None,
+        close=lambda: closed.append(True),
+    )
+    destination = tmp_path / "submission.zip"
+    assert api.save_download(response, destination, 5) == {"bytes": 5}
+    assert destination.read_bytes() == b"12345"
+    assert closed == [True] and list(tmp_path.iterdir()) == [destination]
+
+
+@pytest.mark.parametrize("operation", ["kernel", "download"])
+def test_pinned_sdk_follows_redirects_and_returns_streamed_response(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, operation: str
+) -> None:
+    sdk = pytest.importorskip("kagglesdk.kaggle_client")
+    requests = pytest.importorskip("requests")
+    assert importlib.metadata.version("kagglesdk") == "0.1.37"
+    competition_types = importlib.import_module(
+        "kagglesdk.competitions.types.competition_api_service"
+    )
+    kernel_types = importlib.import_module("kagglesdk.kernels.types.kernels_api_service")
+    methods: list[str] = []
+    closed: list[Any] = []
+    close_response = requests.Response.close
+
+    def close(response: Any) -> None:
+        closed.append(response)
+        close_response(response)
+
+    def send(adapter: Any, request: Any, **kwargs: Any) -> Any:
+        assert kwargs["stream"] is True
+        methods.append(request.method)
+        response = requests.Response()
+        response.request, response.url = request, request.url
+        response.headers["Content-Type"] = "application/zip"
+        if len(methods) == 1:
+            assert request.method == "POST"
+            response.status_code = 302
+            response.headers["Location"] = "https://storage.invalid/submission.zip"
+            response.raw = io.BytesIO()
+        else:
+            assert len(methods) == 2 and request.method == "GET"
+            response.status_code = 200
+            response.headers["Content-Length"] = "9"
+            response.raw = io.BytesIO(b"synthetic")
+        return response
+
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", send)
+    monkeypatch.setattr(requests.Response, "close", close)
+    save_download = api.save_download
+
+    def save(response: Any, destination: Path, max_bytes: int) -> dict[str, int]:
+        assert isinstance(response, requests.Response)
+        assert len(response.history) == 1 and response.history[0].status_code == 302
+        assert response.raw.tell() == 0
+        return save_download(response, destination, max_bytes)
+
+    monkeypatch.setattr(api, "save_download", save)
+    destination = tmp_path / "submission.zip"
+    with sdk.KaggleClient(api_token="synthetic") as client:
+        result = api.dispatch(
+            None,
+            client,
+            {
+                "operation": operation,
+                "competition": "competition",
+                "id": 1,
+                "source": {
+                    "owner": "owner",
+                    "kernel": "kernel",
+                    "version": 10,
+                    "path": "run/submission.zip",
+                },
+                "destination": str(destination),
+                "max_bytes": 9,
+            },
+            competition_types,
+            kernel_types,
+        )
+    assert result == {"bytes": 9} and destination.read_bytes() == b"synthetic"
+    assert methods == ["POST", "GET"]
+    assert any(response.request.method == "GET" for response in closed)
 
 
 def test_create_cutoff_and_write_guard(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
