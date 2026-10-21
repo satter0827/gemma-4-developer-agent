@@ -2,6 +2,8 @@
 
 KaggleのGemma 4 Developer Agent Competitionに向けた、提出エージェントと評価用CLIです。評価対象、設定、成果物を固定し、環境の動作とエージェントの解決能力を分けて確認します。
 
+全129問の分類と費用の読み方は[問題の分析と管理](docs/analysis/README.md)、検証済み候補の朝の自動提出と通知設定は[提出手順](docs/submission.md)を参照してください。定期提出はmain反映・認証設定・有効化が完了してから動きます。
+
 ## 現在の評価
 
 初回の正式提出IDは`57441297`、公開スコアは**0.01**です。同じZIPによる開発用評価はFastAPIの2課題で**0/2**でした。正式評価と開発用評価では対象課題が異なるため、この数値は矛盾しません。正式評価の課題別ログがないため、低スコアの原因を時間切れだけとは断定しません。
@@ -127,6 +129,6 @@ make check
 make coverage
 ```
 
-formatter、lint、型チェック、構造テスト、動作テストを実行します。行90%以上・分岐80%以上を別々に必須とし、`artifacts/coverage/`にJSON、HTML、判定表を保存します。通常CIは外部課題の取得、公式SDKの取得、Kaggle、GPUを使用しません。
+formatter、lint、型チェック、構造テスト、動作テストを実行します。行90%以上・分岐80%以上を別々に必須とし、`artifacts/coverage/`にJSON、HTML、判定表を保存します。品質検査は外部課題・評価SDK・認証情報・GPUを使いません。CIの提出SDK契約テストは固定版Kaggle SDKと合成HTTP応答を使い、外部通信を行いません。
 
 [コーディング規約](docs/coding-standards.md)では設定値と定数、依存方向、循環参照の禁止、副作用と結果保存を定めます。[設計](docs/design.md)、[実行手順](docs/evaluation.md)、[パッチ診断](docs/diagnostics.md)も参照してください。競技データ、正解・診断パッチ、LoRA、実行ログ、認証情報はGitへ含めません。
