@@ -481,6 +481,7 @@ def test_cli_lifecycle_is_readonly_by_default(
     from gemma_agent_dev import cli
     from gemma_agent_dev.submission import cli as submission_cli
 
+    (tmp_path / "pyproject.toml").write_text((ROOT / "pyproject.toml").read_text())
     capsule, archive = candidate
     config = yaml.safe_load((ROOT / "configs/submission/policy.yaml").read_text())
     config["seed_candidates"] = ["seed.json"]

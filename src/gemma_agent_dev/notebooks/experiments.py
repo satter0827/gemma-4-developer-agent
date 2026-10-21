@@ -10,11 +10,13 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from gemma_agent_dev.candidates.preflight import artifact_limit
 from gemma_agent_dev.common.artifacts import file_hash, write_json
 from gemma_agent_dev.common.processes import command
 from gemma_agent_dev.common.sources import EXPERIMENT_MODULES
 from gemma_agent_dev.diagnostics.config import DiagnosticSettings
 from gemma_agent_dev.evaluation.config import RuntimeSettings
+from gemma_agent_dev.evaluation.control_evidence import verify_saved_controls
 from gemma_agent_dev.evaluation.experiment_preparation import load_preparation
 from gemma_agent_dev.evaluation.sdk_checks import (
     fingerprint,
@@ -43,21 +45,7 @@ def load_cpu(
     ):
         raise ValueError("CPU proof does not match the complete experiment bundle")
     for variant, files in report["controls"].items():
-        if "controls.json" not in files or not any(name.endswith("origins.json") for name in files):
-            raise ValueError("CPU proof is missing source and control evidence")
-        for name, expected in files.items():
-            target = (path.parent / "controls" / variant / name).resolve()
-            if not target.is_relative_to(path.parent.resolve()) or file_hash(target) != expected:
-                raise ValueError("CPU proof artifacts changed")
-        records = json.loads((path.parent / "controls" / variant / "controls.json").read_text())
-        if [r["instance_id"] for r in records] != task_ids or any(
-            r["unmodified"]["resolved"] is not False
-            or r["reference"]["resolved"] is not True
-            or r["reference"].get("error")
-            or r["unmodified"].get("error")
-            for r in records
-        ):
-            raise ValueError("CPU controls are incomplete or do not discriminate fixes")
+        verify_saved_controls(path.parent / "controls" / variant, files, task_ids)
     return dict(report)
 
 
@@ -78,6 +66,7 @@ def prepare(
         task_ids=experiment.task_ids, job_timeout_seconds=experiment.session.job_timeout_seconds
     )
     spec = {
+        "max_artifact_bytes": artifact_limit(root),
         "native_controls_sha256": report["controls"]["sha256"],
         "local_diagnostic_config": str(experiment.diagnostic_config.relative_to(root)),
         "definition": report["definition"],

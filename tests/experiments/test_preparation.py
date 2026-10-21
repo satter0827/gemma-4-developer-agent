@@ -70,3 +70,17 @@ def test_order_is_checked_before_creating_candidates(experiment_project: Path) -
     with pytest.raises(ValueError, match="exact frozen"):
         preparation.prepare(experiment_project, Path("experiment.yaml"))
     assert not (experiment_project / "artifacts/experiments").exists()
+
+
+def test_skill_python_is_bound_to_quality_even_for_other_candidates(
+    experiment_project: Path,
+) -> None:
+    from gemma_agent_dev.evaluation.experiments import Experiment
+
+    experiment = Experiment.load(experiment_project, Path("experiment.yaml"))
+    settings = next(iter(preparation.selected_settings(experiment_project, experiment).values()))
+    before = settings.inputs()
+    script = experiment_project / "agent/skills/python-verification-v1/scripts/check.py"
+    assert str(script.relative_to(experiment_project)) in before
+    script.write_text(script.read_text() + "\n# changed implementation\n")
+    assert settings.inputs() != before

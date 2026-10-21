@@ -4,10 +4,10 @@
 
 ```sh
 make setup
-make cli ARGS='validate-experiment --config configs/evaluation/easy-sequential-v1.yaml'
-make cli ARGS='prepare-experiment-tasks --config configs/evaluation/easy-sequential-v1.yaml'
+make cli ARGS='validate-experiment --config configs/evaluation/easy-sequential-v2.yaml'
+make cli ARGS='prepare-experiment-tasks --config configs/evaluation/easy-sequential-v2.yaml'
 make check
-make cli ARGS='freeze-experiment --config configs/evaluation/easy-sequential-v1.yaml'
+make cli ARGS='freeze-experiment --config configs/evaluation/easy-sequential-v2.yaml'
 ```
 
 最後のコマンドが返す `preparation.json` を次の入力にします。固定後にソースや関連入力を変更した場合は、再度固定してください。過去の記録は上書きしません。
@@ -38,3 +38,60 @@ make cli ARGS='sync-tracking --config configs/environments/mlflow.yaml --record 
 SQLiteは `artifacts/mlflow/tracking.db` に保存します。同じ記録の再同期では重複を作りません。同じIDで内容が違えば停止するので、新しいIDで記録を追加します。破損時はDBを退避して同じGit記録を再同期します。プロンプトは自作の未展開指示だけを登録します。競技本文やログを手動で追加しないでください。
 
 GPU実行前には、最新のCPU証拠、候補ハッシュ、固定した課題と順序、残枠、既存消費、同時実行がないこと、90分の期限と停止条件を確認します。GPU結果が得られるまで、逐次構成の精度は未評価です。
+
+## 未使用課題の確認とSkill比較
+
+```sh
+make cli ARGS='plan-experiment --config configs/tasks/rotation.yaml'
+make cli ARGS='validate-experiment --config configs/evaluation/easy-sequential-v2.yaml'
+make cli ARGS='validate-experiment --config configs/evaluation/easy-skills-v1.yaml'
+make cli ARGS='prepare-experiment-tasks --config configs/evaluation/easy-skills-v1.yaml'
+```
+
+逐次構成の新しい比較にはv2を使います。v1は過去の記録として保持します。Skill比較は別の仮説であり、逐次構成や最適化と同時に変更しません。
+
+巡回の提案が宣言済みの課題と一致するか確認します。CPU対照が成立しなければ準備失敗として残し、成績を付けたり補欠と交換したりしません。候補固定とSDK検証は前述と同じ経路です。Skill資産の変更でも新しい候補とCPU記録が必要になります。
+
+## 公開記録の作成
+
+レビュー用YAMLに次の項目を記入します。原因の確度は`confirmed`、`hypothesis`、`unknown`から選びます。観測だけで原因を確認済みにしません。
+
+```yaml
+record_id: easy-skills-result-v1
+interpretation: 同じ課題と固定条件で比較した結果と限界を一文で記載する。
+decision: inconclusive
+parent_candidates:
+  workflow-v1: workflow-v1
+  workflow-skills-v1: workflow-v1
+assessments:
+  - category: verification
+    certainty: hypothesis
+    basis: 公式成否と実際の検証行動に照らして、原因と残る不確実性を記載する。
+prompts:
+  - prompt_id: workflow-v1
+    path: agent/prompts/workflow.md
+```
+
+```sh
+make cli ARGS='summarize-experiment --session artifacts/results/実行ID/session.json --review artifacts/review.yaml --record-output docs/records/experiments/easy-skills-result-v1.json'
+```
+
+数値は照合済みの証拠から作られます。同じ公開ファイルは上書きできません。採用しない結果も、未完了や未確認を含めて判断を残します。分析本文はコマンドから更新しません。
+
+## GEPAのCPU準備と検証
+
+```sh
+make cli ARGS='prepare-optimization-environment --config configs/environments/gepa.yaml'
+make cli ARGS='validate-optimization --config configs/evaluation/easy-gepa-v1.yaml'
+make cli ARGS='prepare-experiment-tasks --config configs/evaluation/easy-sequential-v2.yaml'
+make check
+make cli ARGS='prepare-optimization --config configs/evaluation/easy-gepa-v1.yaml'
+make cli ARGS='prepare-kaggle --name easy-gepa-cpu --optimization-report artifacts/optimizations/実行ID/preparation.json --verify-only'
+make cli ARGS='verify-optimization --bundle artifacts/kaggle/easy-gepa-cpu --sdk-config configs/environments/sdk-cpu.yaml'
+```
+
+GEPA用Wheelは準備コマンドが公式PyPIから取得し、`artifacts/reference/optimization-wheels/`へ保存して設定のハッシュと照合します。依存の準備は通信を伴いますが、CPU検証中は通信とGPUライブラリの読み込みを拒否します。検証は実ライブラリの探索と固定SDKの候補コンパイルを、合成応答で確認します。解決率の確認には使えません。
+
+最適化は比較用の生成5分・30ツール呼出し・50ターン、採点5分を固定します。起動20分、8評価で88分、指示生成2分、CPU準備10分、後始末5分の上限は合計125分です。GPU予算の初期値は未設定です。実行する場合は、最適化設定へ必要時間以上の`gpu_budget`を明示し、既存消費約2.830時間を含めたquotaを確認してください。設定変更後は新しい準備・CPU検証が必要です。候補を採用する場合は、指示を自作候補として新しいIDへ固定し、通常の事前検証と独立した比較を行います。
+
+最適化の`gpu_budget`を設定する場合は、`job_timeout_seconds`（全体の秒数）、`quota_hours`（対象予算の時間）、`reserve_hours`（残す時間）、`quota_per_wall_hour`（壁時計1時間当たりの消費係数）、`max_runs`（実行回数）をすべて記入します。初期の4時間枠へ上限125分の実行を足せるとは限りません。時間の見積もり、観測した消費・残枠、予備を照合し、許可されない場合は実行しません。

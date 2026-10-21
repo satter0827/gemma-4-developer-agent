@@ -1,0 +1,4 @@
+{
+  "max_failures": 3,
+  "max_message_characters": 500
+}

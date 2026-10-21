@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 
 from gemma_agent_dev.candidates.archive import referenced_files
+from gemma_agent_dev.candidates.changes import ChangeScope
 from gemma_agent_dev.common.artifacts import file_hash
 from gemma_agent_dev.common.config import mapping, project_path
 from gemma_agent_dev.evaluation.config import EvaluationSettings, RuntimeSettings
@@ -34,12 +35,17 @@ class Experiment:
     variants: dict[str, Path]
     session: SessionPolicy
     task_ids: list[str]
+    change: ChangeScope | None = None
 
     @classmethod
     def load(cls, root: Path, path: Path) -> "Experiment":
+        raw = yaml.safe_load(project_path(root, str(path)).read_text())
+        names = set(cls.__dataclass_fields__) - {"task_ids", "change"}
+        if isinstance(raw, dict) and "change" in raw:
+            names.add("change")
         data = mapping(
-            yaml.safe_load(project_path(root, str(path)).read_text()),
-            set(cls.__dataclass_fields__) - {"task_ids"},
+            raw,
+            names,
             "experiment",
         )
         identifier(data["experiment_id"])
@@ -71,6 +77,8 @@ class Experiment:
         data["task_ids"] = pool.selection(data["experiment_id"])
         data["variants"] = resolved
         data["session"] = SessionPolicy.parse(data["session"])
+        if "change" in data:
+            data["change"] = ChangeScope.parse(data["change"])
         evaluation = EvaluationSettings.load(data["evaluation_config"])
         runtime = RuntimeSettings.load(data["runtime_config"])
         if (
@@ -97,7 +105,7 @@ class Experiment:
         ]
         runtime = RuntimeSettings.load(self.runtime_config).as_dict()
         runtime.update(task_ids=self.task_ids, job_timeout_seconds=self.session.job_timeout_seconds)
-        return {
+        definition = {
             "experiment_id": self.experiment_id,
             "hypothesis": self.hypothesis,
             "task_ids": self.task_ids,
@@ -124,3 +132,6 @@ class Experiment:
             "evaluation": EvaluationSettings.load(self.evaluation_config).as_dict(),
             "session": asdict(self.session),
         }
+        if self.change is not None:
+            definition["change"] = self.change.as_dict()
+        return definition

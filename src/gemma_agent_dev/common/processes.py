@@ -9,6 +9,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TextIO
 
+from gemma_agent_dev.common.events import CONTEXT, event
+
 
 @contextmanager
 def process_group(
@@ -22,12 +24,20 @@ def process_group(
     with subprocess.Popen(
         args,
         cwd=cwd,
-        env=env,
+        env={
+            **env,
+            **(
+                {"GEMMA_EXECUTION_ID": CONTEXT.get()["execution_id"]}
+                if "execution_id" in CONTEXT.get()
+                else {}
+            ),
+        },
         stdout=stdout,
         stderr=stderr,
         text=True,
         start_new_session=True,
     ) as process:
+        event("process.started")
         failure: BaseException | None = None
         try:
             yield process
@@ -45,6 +55,7 @@ def process_group(
                 failure.add_note(f"Cannot stop validation process group: {error}")
             finally:
                 process.wait()
+                event("process.completed", exit_code=process.returncode)
 
 
 def command(args: list[str], *, cwd: Path, timeout: int, env: dict[str, str] | None = None) -> str:

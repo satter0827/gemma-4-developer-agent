@@ -67,7 +67,8 @@ def test_notebook_watchdog_stops_worker_descendants_and_preserves_failure(
     storage = tmp_path / "artifacts"
     results = storage / "results/run"
     results.mkdir(parents=True)
-    write_json(results / "manifest.json", {"status": "running", "source_sha256": "fixture"})
+    for name in ("manifest.json", "session.json", "search.json"):
+        write_json(results / name, {"status": "running", "source_sha256": "fixture"})
     if timeout:
         with pytest.raises(subprocess.TimeoutExpired):
             run_bounded(
@@ -79,7 +80,10 @@ def test_notebook_watchdog_stops_worker_descendants_and_preserves_failure(
                 progress_interval=0.05,
                 storage=storage,
             )
-        assert json.loads((results / "manifest.json").read_text())["phase"] == "watchdog"
+        assert all(
+            json.loads((results / name).read_text())["phase"] == "watchdog"
+            for name in ("manifest.json", "session.json", "search.json")
+        )
     else:
         run_bounded(
             source,

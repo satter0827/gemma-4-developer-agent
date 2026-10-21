@@ -1,0 +1,8 @@
+requirements: configs/environments/gepa.in
+lock_file: configs/environments/gepa.lock
+environment: artifacts/gepa-env
+wheel_cache: artifacts/reference/optimization-wheels
+wheel_name: gepa-0.1.4-py3-none-any.whl
+wheel_sha256: 12b971039599625c156d2231f6d72a29c31a22e9c237689459b5f1a3c353f532
+python_version: '3.12'
+timeout_seconds: 600

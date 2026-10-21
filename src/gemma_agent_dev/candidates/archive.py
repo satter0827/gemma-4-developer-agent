@@ -97,6 +97,40 @@ def referenced_files(root: Path, entry: Path) -> dict[str, str]:
                             if not isinstance(child, str):
                                 raise ValueError("Expected agent config path")
                             load(path.parent / child)
+                        elif key == "skills":
+                            if (
+                                not isinstance(child, list)
+                                or not child
+                                or any(not isinstance(p, str) for p in child)
+                            ):
+                                raise ValueError("Expected declared skill directories")
+                            for name in child:
+                                relative = PurePosixPath(name)
+                                skill = root / name
+                                if (
+                                    relative.is_absolute()
+                                    or ".." in relative.parts
+                                    or "\\" in name
+                                    or str(relative) != name
+                                    or not name.startswith("skills/")
+                                    or skill.is_symlink()
+                                    or not skill.is_dir()
+                                ):
+                                    raise ValueError("Invalid skill directory")
+                                checked(skill / "SKILL.md")
+                                for asset in skill.rglob("*"):
+                                    if asset.is_symlink() or any(
+                                        p.startswith(".") or p == "__pycache__"
+                                        for p in asset.relative_to(root).parts
+                                    ):
+                                        raise ValueError("Linked or hidden skill resource")
+                                    if asset.is_file():
+                                        if (
+                                            asset.suffix not in ALLOWED_SUFFIXES
+                                            or asset.suffix == ".safetensors"
+                                        ):
+                                            raise ValueError("Unexpected skill resource")
+                                        checked(asset)
                         else:
                             visit(child)
                 elif isinstance(item, list):

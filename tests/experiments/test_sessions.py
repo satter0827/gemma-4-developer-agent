@@ -163,7 +163,7 @@ def test_one_server_and_independent_cells(session_fixture: Any) -> None:
     assert calls.count("registry") == 4
     assert report["actual_order"] == report["planned_order"]
     assert len({c["manifest"] for c in report["cells"]}) == 2
-    result = summarize(path)
+    result = summarize(path, max_bytes=2000000)
     assert result["counts"]["both"] == 1 and result["formal_score"] is None
     assert (path.parent / "vllm.log").read_text() == "server log"
     second = session.run(root, provenance)
@@ -284,7 +284,7 @@ def test_pair_not_started_when_remaining_time_is_insufficient(
     report = json.loads(path.read_text())
     assert report["status"] == "incomplete" and report["actual_order"] == []
     assert "evaluate" not in calls and calls[-1] == "stop"
-    assert summarize(path)["counts"]["not_run"] == 1
+    assert summarize(path, max_bytes=2000000)["counts"]["not_run"] == 1
 
 
 def test_cpu_proof_checks_artifacts_and_bundle_identity(
@@ -313,7 +313,7 @@ def test_cpu_proof_checks_artifacts_and_bundle_identity(
             path, "changed", provenance["definition_sha256"], report["task_ids"], report["variants"]
         )
     with pytest.raises(ValueError):
-        summarize(path)
+        summarize(path, max_bytes=2000000)
     first = next((path.parent / "controls").rglob("origins.json"))
     first.write_text("{}")
     with pytest.raises(ValueError, match="artifacts"):

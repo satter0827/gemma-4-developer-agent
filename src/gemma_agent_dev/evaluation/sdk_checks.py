@@ -9,6 +9,7 @@ import yaml
 
 from gemma_agent_dev.common.artifacts import file_hash, new_run_id, python_inventory, write_json
 from gemma_agent_dev.common.config import mapping, positive, project_path
+from gemma_agent_dev.common.events import logged
 from gemma_agent_dev.common.processes import command
 from gemma_agent_dev.evaluation.config import RuntimeSettings
 
@@ -92,6 +93,7 @@ def installed_state(root: Path, data: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
+@logged("sdk.prepare")
 def prepare(root: Path, config: Path) -> Path:
     data = settings(root, config)
     (data["environment"] / "prepared.json").unlink(missing_ok=True)
@@ -153,6 +155,7 @@ def prepare(root: Path, config: Path) -> Path:
     return destination
 
 
+@logged("sdk.verify")
 def check(root: Path, config: Path) -> Path:
     data = settings(root, config)
     receipt = json.loads((data["environment"] / "prepared.json").read_text())

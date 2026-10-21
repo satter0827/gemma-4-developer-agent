@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from gemma_agent_dev.common.artifacts import file_hash, inventory, new_run_id, write_json
+from gemma_agent_dev.common.events import context, event, local_session, logged, phase
 from gemma_agent_dev.common.junit import diagnostic_evidence
 from gemma_agent_dev.common.processes import command, process_group
 from gemma_agent_dev.diagnostics.config import DiagnosticSettings, DiagnosticTask
@@ -63,6 +64,7 @@ def environment(settings: DiagnosticSettings) -> dict[str, str]:
     return result
 
 
+@logged("diagnostic.prepare")
 def prepare(settings: DiagnosticSettings) -> Path:
     catalog = TaskCatalog.load(settings.root, settings.catalog_path)
     catalog.wheel_cache.mkdir(parents=True, exist_ok=True)
@@ -256,6 +258,7 @@ def apply_patch(workspace: Path, patch: str, destination: Path, timeout: int) ->
             command(["git", "apply", handle.name], cwd=workspace, timeout=timeout)
 
 
+@logged("diagnostic.case")
 def run_case(
     settings: DiagnosticSettings,
     task: DiagnosticTask,
@@ -338,12 +341,10 @@ def run_case(
     return record
 
 
-def diagnose(settings: DiagnosticSettings) -> Path:
+def _diagnose(settings: DiagnosticSettings, output: Path) -> Path:
     (settings.cache_dir / "local-success.json").unlink(missing_ok=True)
     prepared = check_prepared(settings)
     tasks = settings.read_tasks()
-    output = settings.output_dir / new_run_id()
-    output.mkdir(parents=True)
     (settings.root / "artifacts/tmp").mkdir(parents=True, exist_ok=True)
     report: dict[str, Any] = {
         "kind": "diagnostic",
@@ -360,14 +361,18 @@ def diagnose(settings: DiagnosticSettings) -> Path:
         for task in settings.tasks:
             patches = task.patches(tasks[task.instance_id])
             for name, patch in patches.items():
-                record = run_case(
-                    settings,
-                    task,
-                    tasks[task.instance_id],
-                    name,
-                    patch,
-                    output / task.instance_id / name,
-                )
+                with context(task_id=task.instance_id, stage=name):
+                    record = run_case(
+                        settings,
+                        task,
+                        tasks[task.instance_id],
+                        name,
+                        patch,
+                        output / task.instance_id / name,
+                    )
+                    event(
+                        "diagnostic.outcome", result="matched" if record["matched"] else "mismatch"
+                    )
                 report["cases"].append(record)
                 write_json(output / "report.json", report)
                 python = settings.environments_dir / task.instance_id / "bin/python"
@@ -402,3 +407,10 @@ def diagnose(settings: DiagnosticSettings) -> Path:
         write_json(output / "report.json", report)
         raise
     return output
+
+
+def diagnose(settings: DiagnosticSettings) -> Path:
+    output = settings.output_dir / new_run_id()
+    output.mkdir(parents=True)
+    with local_session(settings.root, output), phase("diagnostic"):
+        return _diagnose(settings, output)

@@ -31,10 +31,10 @@ select = ["E", "F", "I", "B", "UP", "PLR2004"]
 python_version = "3.12"
 strict = true
 cache_dir = "artifacts/cache/mypy"
-files = ["src", "tests", "scripts"]
+files = ["src", "tests", "scripts", "agent/skills"]
 
 [[tool.mypy.overrides]]
-module = ["swegemma.*", "adk_submission.*", "adk_eval_core.*", "google.adk.*", "google.genai.*", "litellm", "torch", "mlflow.*"]
+module = ["swegemma.*", "adk_submission.*", "adk_eval_core.*", "google.adk.*", "google.genai.*", "litellm", "torch", "mlflow.*", "gepa.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -44,7 +44,7 @@ addopts = "--basetemp=artifacts/tmp/pytest"
 
 [tool.coverage.run]
 branch = true
-source = ["gemma_agent_dev", "scripts"]
+source = ["gemma_agent_dev", "scripts", "agent/skills"]
 data_file = "artifacts/coverage/.coverage"
 relative_files = true
 
@@ -68,6 +68,12 @@ branch = 80
 [tool.gemma_agent_dev.results]
 max_artifact_bytes = 2000000
 
+[tool.gemma_agent_dev.logging]
+file_level = "INFO"
+console_level = "WARNING"
+max_bytes = 10485760
+backup_count = 3
+
 [tool.architecture]
 gpu_free_roles = ["core", "settings", "diagnostic", "local", "cli", "quality", "operations"]
 inference_imports = ["torch", "litellm", "swegemma", "adk_submission", "adk_eval_core", "google.adk"]
@@ -79,6 +85,10 @@ numeric_parameters = ["timeout", "startup_timeout", "max_bytes", "concurrency", 
 
 [tool.architecture.modules]
 core = [
+  "gemma_agent_dev.evaluation.optimization_limits",
+  "gemma_agent_dev.evaluation.optimization_candidates",
+  "gemma_agent_dev.candidates.changes",
+  "gemma_agent_dev.common.events",
   "gemma_agent_dev.evaluation.session_policy",
   "gemma_agent_dev.evaluation.control_evidence",
   "gemma_agent_dev",
@@ -105,6 +115,7 @@ core = [
   "gemma_agent_dev.evaluation.budget",
 ]
 settings = [
+  "gemma_agent_dev.evaluation.record_schema",
   "gemma_agent_dev.tasks.pools",
   "gemma_agent_dev.evaluation.experiments",
   "gemma_agent_dev.diagnostics.config",
@@ -112,6 +123,8 @@ settings = [
   "gemma_agent_dev.submission.config",
 ]
 connection = [
+  "gemma_agent_dev.evaluation.optimization_engine",
+  "gemma_agent_dev.evaluation.skill_checks",
   "gemma_agent_dev.evaluation.tracking_worker",
   "gemma_agent_dev.evaluation.sequential_checks",
   "gemma_agent_dev.evaluation.official",
@@ -127,6 +140,11 @@ diagnostic = [
   "gemma_agent_dev.evaluation.sdk_checks",
 ]
 local = [
+  "gemma_agent_dev.evaluation.optimization",
+  "gemma_agent_dev.evaluation.optimization_preparation",
+  "gemma_agent_dev.notebooks.optimization",
+  "gemma_agent_dev.tasks.rotation",
+  "gemma_agent_dev.evaluation.experiment_records",
   "gemma_agent_dev.evaluation.experiment_preparation",
   "gemma_agent_dev.evaluation.experiment_results",
   "gemma_agent_dev.evaluation.tracking",
@@ -144,6 +162,9 @@ operations = [
   "gemma_agent_dev.submission.state",
 ]
 remote = [
+  "gemma_agent_dev.evaluation.optimization_runtime",
+  "gemma_agent_dev.evaluation.optimization_validation",
+  "gemma_agent_dev.evaluation.optimization_worker",
   "gemma_agent_dev.evaluation.session",
   "gemma_agent_dev.evaluation.session_worker",
   "gemma_agent_dev.evaluation.runtime",

@@ -7,6 +7,25 @@ from pathlib import Path
 from typing import Any
 
 from gemma_agent_dev.common.artifacts import write_json
+from gemma_agent_dev.common.events import logged
+
+
+@logged("model.start")
+def start_model(server: Any, runtime: dict[str, Any]) -> float:
+    import litellm
+    import torch
+
+    if torch.cuda.device_count() != runtime["vllm"]["tensor_parallel_size"]:
+        raise RuntimeError("Unexpected GPU count")
+    litellm.drop_params = True
+    started = time.monotonic()
+    server.start()
+    return time.monotonic() - started
+
+
+@logged("model.stop")
+def stop_model(server: Any) -> None:
+    server.stop()
 
 
 def expected_model(runtime: dict[str, Any]) -> str:

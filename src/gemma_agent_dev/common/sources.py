@@ -4,6 +4,7 @@ import ast
 from pathlib import Path
 
 BASE_MODULES = (
+    "common.events",
     "common.artifacts",
     "common.config",
     "common.junit",
@@ -21,6 +22,7 @@ EVALUATION_MODULES = (
     "candidates.archive",
     "evaluation.results",
     "evaluation.runtime",
+    "evaluation.analysis",
 )
 EXPERIMENT_MODULES = (
     *EVALUATION_MODULES,
@@ -30,9 +32,23 @@ EXPERIMENT_MODULES = (
     "evaluation.session",
     "evaluation.session_worker",
     "evaluation.sequential_checks",
+    "evaluation.skill_checks",
+    "candidates.changes",
+)
+OPTIMIZATION_MODULES = (
+    *EXPERIMENT_MODULES,
+    "common.archives",
+    "candidates.packaging",
+    "evaluation.optimization_limits",
+    "evaluation.optimization_engine",
+    "evaluation.optimization_candidates",
+    "evaluation.optimization_runtime",
+    "evaluation.optimization_validation",
+    "evaluation.optimization_worker",
 )
 DIAGNOSTIC_MODULES = (*BASE_MODULES, "diagnostics.remote")
 LOCAL_DIAGNOSTIC_MODULES = (
+    "common.events",
     "common.sources",
     "common.artifacts",
     "common.config",

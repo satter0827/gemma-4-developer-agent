@@ -1,0 +1,8 @@
+experiment: configs/evaluation/easy-skills-v1.yaml
+task_count: 6
+repository_order:
+- fastapi
+- rich
+- requests
+seed: 0
+records: docs/records/experiments

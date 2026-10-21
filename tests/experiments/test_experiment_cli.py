@@ -42,7 +42,7 @@ def test_tracking_and_cpu_commands(
     )
     monkeypatch.setattr(
         "gemma_agent_dev.evaluation.experiment_results.summarize",
-        lambda *a: {"counts": {"both": 1}},
+        lambda *a, **kw: {"counts": {"both": 1}},
     )
     assert main(["prepare-tracking", "--config", "tracking.yaml"]) == 0
     assert main(["sync-tracking", "--config", "tracking.yaml", "--record", "record.json"]) == 0
@@ -95,3 +95,115 @@ def test_notebook_experiment_route(
             )
     with pytest.raises(SystemExit):
         main(["prepare-kaggle", "--name", "experiment", "--quota", "quota.json"])
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "prepare-optimization-environment",
+        "prepare-optimization",
+        "validate-optimization",
+        "verify-optimization",
+        "plan-experiment",
+    ],
+)
+def test_new_commands_are_explicit_cpu_operations(
+    experiment_project: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.chdir(experiment_project)
+    monkeypatch.setattr(
+        "gemma_agent_dev.evaluation.optimization_preparation.prepare_environment",
+        lambda *a: Path("environment.json"),
+    )
+    monkeypatch.setattr(
+        "gemma_agent_dev.evaluation.optimization_preparation.prepare",
+        lambda *a: Path("preparation.json"),
+    )
+    monkeypatch.setattr(
+        "gemma_agent_dev.evaluation.optimization.Optimization.load",
+        lambda *a: SimpleNamespace(definition=lambda _: dict(kind="optimization")),
+    )
+    monkeypatch.setattr(
+        "gemma_agent_dev.notebooks.optimization.verify_local", lambda *a: Path("cpu.json")
+    )
+    monkeypatch.setattr("gemma_agent_dev.tasks.rotation.plan", lambda *a: dict(task_ids=["task_1"]))
+    arguments = (
+        ["--bundle", "bundle", "--sdk-config", "sdk.yaml"]
+        if command == "verify-optimization"
+        else ["--config", "config.yaml"]
+    )
+    assert main([command, *arguments]) == 0
+
+
+def test_optimization_notebook_route_and_exclusivity(
+    experiment_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(experiment_project)
+    calls = []
+
+    def prepare(*args: Any, **kwargs: Any) -> str:
+        calls.append(kwargs)
+        return "digest"
+
+    monkeypatch.setattr("gemma_agent_dev.notebooks.optimization.prepare", prepare)
+    assert (
+        main(
+            [
+                "prepare-kaggle",
+                "--name",
+                "optimization-cpu",
+                "--optimization-report",
+                "report.json",
+                "--verify-only",
+            ]
+        )
+        == 0
+    )
+    assert calls[0]["verify_only"] is True and calls[0]["cpu_report"] is None
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "prepare-kaggle",
+                "--name",
+                "invalid",
+                "--optimization-report",
+                "report.json",
+                "--experiment-report",
+                "other.json",
+            ]
+        )
+
+
+def test_review_requires_explicit_output_and_preserves_stdout(
+    experiment_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(experiment_project)
+    monkeypatch.setattr(
+        "gemma_agent_dev.evaluation.experiment_results.summarize",
+        lambda *a, **kw: dict(counts={"both": 1}),
+    )
+    exported = []
+    monkeypatch.setattr(
+        "gemma_agent_dev.evaluation.experiment_records.export", lambda *a: exported.append(a)
+    )
+    path = experiment_project / "session.json"
+    path.touch()
+    assert main(["summarize-experiment", "--session", str(path), "--review", "review.yaml"]) == 1
+    assert not exported
+    assert (
+        main(
+            [
+                "summarize-experiment",
+                "--session",
+                str(path),
+                "--review",
+                "review.yaml",
+                "--record-output",
+                "docs/records/experiments/test.json",
+            ]
+        )
+        == 0
+    )
+    assert len(exported) == 1

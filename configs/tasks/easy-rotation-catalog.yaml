@@ -1,0 +1,70 @@
+tasks_file: artifacts/reference/tasks.jsonl
+tasks_sha256: e4b3fd60f69dbc2b9213e54eeb9636db78aefe92c1d06269d73d9f5f8f3c8ad6
+tasks:
+- instance_id: fastapi_14297
+  snapshot_sha256: faf251417cee0c2119c8dcaed978ca394abd35bd6c719ca9be175ed49688a595
+  test_paths:
+  - tests/test_compat.py
+  - tests/test_optional_file_list.py
+  source_roots:
+  - .
+  import_modules:
+  - fastapi
+  dependency_wheels: &id001
+    dirty_equals-0.11-py3-none-any.whl: b1d7093273fc2f9be12f443a8ead954ef6daaf6746fd42ef3a5616433ee85286
+    inline_snapshot-0.21.1-py3-none-any.whl: 65ad7c27c0846e33109c2501ef9d6e60f830471e7bdbb810837556d0c4549b9e
+    python_multipart-0.0.18-py3-none-any.whl: efe91480f485f6a361427a541db4796f9e1591afc0fb8e7a4ba06bfbc6708996
+    asttokens-3.0.0-py3-none-any.whl: e3078351a059199dd5138cb1c706e6430c05eff2ff136af5eb4790f9d28932e2
+    executing-2.2.1-py2.py3-none-any.whl: 760643d3452b4d777d295bb167ccc74c64a81df23fb5e08eff250c425a4b2017
+- instance_id: rich_3944
+  snapshot_sha256: d11cc9819e39a7c9297ef338c3ae4890e62160318cc06cbd4e79e9ce1cde34ee
+  test_paths:
+  - tests/test_cells.py
+  source_roots:
+  - .
+  import_modules:
+  - rich
+  dependency_wheels: {}
+- instance_id: requests_6592
+  snapshot_sha256: 3851e9c8478040884edb588edece3680355727a11f3fa59c86ebc8df5919db4b
+  test_paths:
+  - tests/test_requests.py
+  source_roots:
+  - src
+  - .
+  import_modules:
+  - requests
+  dependency_wheels:
+    Werkzeug-2.2.3-py3-none-any.whl: 56433961bc1f12533306c624f3be5e744389ac61d722175d543e1751285da612
+    Flask-2.2.5-py3-none-any.whl: 58107ed83443e86067e41eff4631b058178191a355886f8e479e347fa1285fdf
+- instance_id: fastapi_14463
+  snapshot_sha256: 22c6e5cbe1d1a2ebc72766f6e92003187db7bc6ebbe8c69d18416a308b52d35e
+  test_paths:
+  - tests/test_additional_responses_union_duplicate_anyof.py
+  source_roots:
+  - .
+  import_modules:
+  - fastapi
+  dependency_wheels: *id001
+- instance_id: rich_3006
+  snapshot_sha256: 4e30c3acf40c6efe567b2283154d6145dfefc4a3644bace784f223c9a5607a0f
+  test_paths:
+  - tests/test_repr.py
+  source_roots:
+  - .
+  import_modules:
+  - rich
+  dependency_wheels: {}
+- instance_id: requests_6589
+  snapshot_sha256: 053f2ea73cb7b604f535ee2eabe596dae9df9d7ff54a365d62b4ff0bebab7115
+  test_paths:
+  - tests/test_requests.py
+  source_roots:
+  - src
+  - .
+  import_modules:
+  - requests
+  dependency_wheels:
+    Werkzeug-2.2.3-py3-none-any.whl: 56433961bc1f12533306c624f3be5e744389ac61d722175d543e1751285da612
+    Flask-2.2.5-py3-none-any.whl: 58107ed83443e86067e41eff4631b058178191a355886f8e479e347fa1285fdf
+wheel_cache: artifacts/reference/task-wheels

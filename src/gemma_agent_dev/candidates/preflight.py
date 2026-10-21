@@ -26,6 +26,7 @@ from gemma_agent_dev.common.artifacts import (
     write_json,
 )
 from gemma_agent_dev.common.config import mapping, positive, project_path
+from gemma_agent_dev.common.events import logged
 from gemma_agent_dev.common.processes import process_group
 from gemma_agent_dev.diagnostics.config import DiagnosticSettings
 from gemma_agent_dev.evaluation.config import (
@@ -146,6 +147,9 @@ class PreflightSettings:
                 for p in (self.root / directory).rglob("*")
                 if p.is_file() and "__pycache__" not in p.parts
             )
+        paths.extend(
+            p for p in (self.root / "agent/skills").rglob("*.py") if "__pycache__" not in p.parts
+        )
         paths.extend(self.root / name for name in ("Makefile", "pyproject.toml", "uv.lock"))
         diagnostics = DiagnosticSettings.load(self.root, self.diagnostic_config)
         paths.extend([diagnostics.tasks_file, diagnostics.requirements, diagnostics.lock_file])
@@ -181,6 +185,7 @@ def check_installation(root: Path) -> None:
         raise ValueError("Installed development package is stale; run make setup")
 
 
+@logged("preflight")
 def run(root: Path, config: Path, profile: str) -> Path:
     from gemma_agent_dev.diagnostics.local import diagnose
     from gemma_agent_dev.notebooks.diagnostics import verified_spec
@@ -232,6 +237,7 @@ def run(root: Path, config: Path, profile: str) -> Path:
     return report_path
 
 
+@logged("quality")
 def verify_quality(settings: PreflightSettings, output: Path) -> None:
     with (output / "quality.log").open("w") as log:
         with process_group(
@@ -245,6 +251,7 @@ def verify_quality(settings: PreflightSettings, output: Path) -> None:
                 raise subprocess.CalledProcessError(code, process.args)
 
 
+@logged("candidate.freeze")
 def freeze_candidate(settings: PreflightSettings, output: Path) -> dict[str, str]:
     with tempfile.TemporaryDirectory(dir=output) as temporary:
         staging = Path(temporary)

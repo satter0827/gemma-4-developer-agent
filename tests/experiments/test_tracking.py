@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.fixture
 def tracking_project(tmp_path: Path) -> tuple[Path, Path, Path]:
     root = tmp_path
+    (root / "pyproject.toml").write_text((ROOT / "pyproject.toml").read_text())
     (root / "agent/prompts").mkdir(parents=True)
     (root / "agent/prompts/test.md").write_text("Authored {problem_description}")
     (root / "requirements.in").write_text("mlflow-skinny==3.17.2")
@@ -325,6 +326,13 @@ def test_git_records_are_valid_without_mlflow_or_competition_data() -> None:
     from gemma_agent_dev.evaluation.experiments import Experiment, content_hash
 
     for row in rows:
+        if row.get("record_schema_version") == 2:
+            assert row["record_schema_version"] == 2
+            assert len(row["observations"]) == len(row["task_ids"])
+            assert (
+                sum(item["resolved"] for item in row["observations"]) == row["metrics"]["resolved"]
+            )
+            continue
         definition = Experiment.load(ROOT, Path(f"configs/evaluation/{row['experiment_id']}.yaml"))
         assert row["experiment_id"] == definition.experiment_id
         assert row["definition_sha256"] == content_hash(definition.definition(ROOT))

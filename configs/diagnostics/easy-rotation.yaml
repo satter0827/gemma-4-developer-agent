@@ -1,0 +1,61 @@
+runtime_path: configs/evaluation/runtime.yaml
+cache_dir: artifacts/easy-rotation/reference
+environments_dir: artifacts/easy-rotation/envs
+output_dir: artifacts/easy-rotation/controls
+requirements: configs/environments/comparison.in
+lock_file: configs/environments/comparison.lock
+python_version: '3.12'
+kernel_id: satter0927/gemma-4-developer-agent-qualification
+timeout_seconds: 300
+pytest_args:
+- -p
+- pytest_timeout
+- -p
+- pytest_mock
+- -p
+- pytest_httpbin.plugin
+- -q
+tasks:
+- instance_id: fastapi_14297
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: rich_3944
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: requests_6592
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: fastapi_14463
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: rich_3006
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: requests_6589
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+catalog_path: configs/tasks/easy-rotation-catalog.yaml

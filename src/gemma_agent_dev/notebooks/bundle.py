@@ -9,6 +9,7 @@ from typing import Any
 
 from gemma_agent_dev.common.archives import zip_content
 from gemma_agent_dev.common.artifacts import write_json
+from gemma_agent_dev.common.events import policy
 from gemma_agent_dev.common.sources import source_paths, validate_bundle_sources
 
 
@@ -17,7 +18,11 @@ def payload(
 ) -> tuple[bytes, list[Path]]:
     files = source_paths(root, modules)
     validate_bundle_sources(root, files)
-    content = {**inputs, **{p.relative_to(root).as_posix(): p.read_bytes() for p in files}}
+    content = {
+        **inputs,
+        "logging.json": policy(root),
+        **{p.relative_to(root).as_posix(): p.read_bytes() for p in files},
+    }
     return zip_content(content), files
 
 

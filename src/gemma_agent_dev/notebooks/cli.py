@@ -12,6 +12,7 @@ def configure(commands: Any) -> None:
     prepare = commands.add_parser("prepare-kaggle", help="Private用の提出準備コードを生成")
     prepare.add_argument("--name", required=True, help="生成先の名前")
     prepare.add_argument("--experiment-report", type=Path, help="固定した比較実験の記録")
+    prepare.add_argument("--optimization-report", type=Path, help="固定した最適化の準備記録")
     prepare.add_argument("--quota", type=Path, help="GPU実行前に観測した枠と消費量")
     prepare.add_argument("--preflight-report", type=Path, help="完了したローカル事前検証の記録")
     prepare.add_argument("--verify-only", action="store_true", help="GPUを使わず参照検証のみ実行")
@@ -26,6 +27,23 @@ def run(root: Path, args: argparse.Namespace) -> int:
     from gemma_agent_dev.notebooks.evaluation import prepare as build_bundle
 
     destination = artifact_directory(root, "kaggle") / args.name
+    if args.optimization_report:
+        if args.experiment_report or args.diagnostics_config or args.preflight_report:
+            args.command_parser.error("--optimization-reportは他の評価設定と併用できません。")
+        import json
+
+        from gemma_agent_dev.notebooks.optimization import prepare as build_optimization
+
+        digest = build_optimization(
+            root,
+            destination,
+            report_path=args.optimization_report.resolve(),
+            verify_only=args.verify_only,
+            cpu_report=args.cpu_report,
+            quota=json.loads(args.quota.read_text()) if args.quota else None,
+        )
+        print(f"保存先：{destination}\nソースSHA-256：{digest}")
+        return 0
     if args.experiment_report:
         if args.diagnostics_config or args.preflight_report:
             args.command_parser.error("--experiment-reportは他の評価設定と併用できません。")

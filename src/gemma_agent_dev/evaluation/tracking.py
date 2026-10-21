@@ -2,7 +2,7 @@
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -10,8 +10,10 @@ import yaml
 
 from gemma_agent_dev.common.artifacts import file_hash, new_run_id, write_json
 from gemma_agent_dev.common.config import mapping, positive, project_path
+from gemma_agent_dev.common.events import LogSettings, logged
 from gemma_agent_dev.common.processes import command
 from gemma_agent_dev.evaluation.experiments import content_hash
+from gemma_agent_dev.evaluation.record_schema import EXTRA_FIELDS, validate_extra
 from gemma_agent_dev.tasks.catalog import checksum
 from gemma_agent_dev.tasks.pools import identifier, task_ids
 
@@ -95,6 +97,7 @@ def installed(settings: TrackingSettings, root: Path) -> dict[str, Any]:
     )
 
 
+@logged("tracking.prepare")
 def prepare(root: Path, config: Path) -> Path:
     settings = TrackingSettings.load(root, config)
     receipt = settings.environment / "prepared.json"
@@ -124,12 +127,30 @@ def prepare(root: Path, config: Path) -> Path:
     return receipt
 
 
-def load_records(root: Path, paths: list[Path]) -> list[dict[str, Any]]:
-    records = []
+def load_records(
+    root: Path, paths: list[Path], *, records: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
+    if paths and records is not None:
+        raise ValueError("Specify record paths or parsed records")
+    values = (
+        [json.loads(project_path(root, str(path)).read_text()) for path in paths]
+        if records is None
+        else records
+    )
+    loaded = []
     seen = set()
-    for path in paths:
+    definitions: dict[str, str] = {}
+    authored_prompts: dict[str, tuple[str, str]] = {}
+    for value in values:
+        extra = (
+            set(EXTRA_FIELDS)
+            if isinstance(value, dict) and "record_schema_version" in value
+            else set()
+        )
+        if extra:
+            validate_extra(value)
         row = mapping(
-            json.loads(project_path(root, str(path)).read_text()),
+            value,
             {
                 "record_id",
                 "experiment_id",
@@ -142,7 +163,8 @@ def load_records(root: Path, paths: list[Path]) -> list[dict[str, Any]]:
                 "metrics",
                 "interpretation",
                 "prompts",
-            },
+            }
+            | extra,
             "experiment record",
         )
         for key in ("record_id", "experiment_id", "hypothesis"):
@@ -157,6 +179,12 @@ def load_records(root: Path, paths: list[Path]) -> list[dict[str, Any]]:
         seen.add(row["record_id"])
         task_ids(row["task_ids"])
         checksum(row["definition_sha256"])
+        if (
+            row["experiment_id"] in definitions
+            and definitions[row["experiment_id"]] != row["definition_sha256"]
+        ):
+            raise ValueError("Stable experiment ID cannot be reused with different conditions")
+        definitions[row["experiment_id"]] = row["definition_sha256"]
         checksum(row["source_sha256"])
         if not isinstance(row["candidate_hashes"], dict) or not row["candidate_hashes"]:
             raise ValueError("Missing candidate hashes")
@@ -192,10 +220,20 @@ def load_records(root: Path, paths: list[Path]) -> list[dict[str, Any]]:
             ):
                 raise ValueError("Prompt definition changed or is outside authored prompts")
             prompt_ids.add(prompt["prompt_id"])
-        records.append(row)
-    return records
+            identity = prompt["path"], prompt["sha256"]
+            if (
+                prompt["prompt_id"] in authored_prompts
+                and authored_prompts[prompt["prompt_id"]] != identity
+            ):
+                raise ValueError(
+                    "Stable prompt ID cannot be reused with different authored content"
+                )
+            authored_prompts[prompt["prompt_id"]] = identity
+        loaded.append(row)
+    return loaded
 
 
+@logged("tracking.sync")
 def sync(root: Path, config: Path, paths: list[Path]) -> Path:
     settings = TrackingSettings.load(root, config)
     receipt = json.loads((settings.environment / "prepared.json").read_text())
@@ -208,6 +246,7 @@ def sync(root: Path, config: Path, paths: list[Path]) -> Path:
     output.mkdir(parents=True)
     # The worker receives only the validated public schema; raw artifacts never enter MLflow.
     request = {
+        "logging": asdict(LogSettings.load(root)),
         "database": str(settings.database),
         "experiment_name": settings.experiment_name,
         "records": [

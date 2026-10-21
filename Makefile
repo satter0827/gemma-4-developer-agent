@@ -6,7 +6,7 @@ export TMPDIR := $(CURDIR)/artifacts/tmp
 .DEFAULT_GOAL := help
 .NOTPARALLEL:
 
-PYTHON_SOURCES := src tests scripts
+PYTHON_SOURCES := src tests scripts agent/skills
 UV_SYNC := uv sync --frozen --no-editable --reinstall-package gemma-agent-dev
 RUN := uv run --no-sync
 

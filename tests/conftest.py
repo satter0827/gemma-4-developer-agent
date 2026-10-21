@@ -88,7 +88,7 @@ def diagnostic_project(tmp_path: Path) -> DiagnosticSettings:
     root = tmp_path / "project"
     root.mkdir()
     (root / "artifacts/tmp").mkdir(parents=True)
-    (root / "pyproject.toml").touch()
+    (root / "pyproject.toml").write_text((ROOT / "pyproject.toml").read_text())
     shutil.copytree(ROOT / "src", root / "src")
     config = RuntimeSettings.load(ROOT / "configs/evaluation/runtime.yaml").as_dict()
     config["task_ids"] = ["fixture_1"]

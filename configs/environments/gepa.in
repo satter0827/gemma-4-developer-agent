@@ -1,0 +1,3 @@
+# GEPA orchestration and resolved application settings only.
+gepa==0.1.4
+PyYAML==6.0.3

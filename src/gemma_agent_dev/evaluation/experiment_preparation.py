@@ -5,6 +5,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from gemma_agent_dev.candidates.archive import extract_archive
+from gemma_agent_dev.candidates.changes import validate_change
 from gemma_agent_dev.candidates.preflight import (
     PreflightSettings,
     check_installation,
@@ -13,8 +15,10 @@ from gemma_agent_dev.candidates.preflight import (
 )
 from gemma_agent_dev.common.artifacts import file_hash, inventory, new_run_id, write_json
 from gemma_agent_dev.common.config import project_path
+from gemma_agent_dev.common.events import logged
 from gemma_agent_dev.diagnostics.config import DiagnosticSettings
 from gemma_agent_dev.diagnostics.local import check_prepared, diagnose
+from gemma_agent_dev.evaluation.control_evidence import validate_control_set
 from gemma_agent_dev.evaluation.experiments import Experiment, content_hash
 from gemma_agent_dev.tasks.pools import TaskPool
 
@@ -36,6 +40,7 @@ def selected_settings(root: Path, experiment: Experiment) -> dict[str, Preflight
     }
 
 
+@logged("experiment.prepare")
 def prepare(root: Path, config: Path) -> Path:
     experiment = Experiment.load(root, config)
     check_installation(root)
@@ -81,6 +86,20 @@ def prepare(root: Path, config: Path) -> Path:
                 "sha256": file_hash(folder / "submission.zip"),
                 "max_unpacked_bytes": value.max_unpacked_bytes,
             }
+        if experiment.change is not None:
+            import tempfile
+
+            with tempfile.TemporaryDirectory(dir=output) as temporary:
+                folders = {name: Path(temporary) / name for name in settings}
+                for name, folder in folders.items():
+                    extract_archive(
+                        output / name / "submission.zip", folder, settings[name].max_unpacked_bytes
+                    )
+                report["change_check"] = validate_change(
+                    experiment.change,
+                    folders,
+                    {name: v["files"] for name, v in report["variants"].items()},
+                )
         if definition != experiment.definition(root) or before != {
             name: value.inputs() for name, value in settings.items()
         }:
@@ -121,6 +140,7 @@ def load_preparation(root: Path, path: Path) -> tuple[Experiment, dict[str, Any]
     if file_hash(controls) != report["controls"]["sha256"]:
         raise ValueError("CPU controls changed")
     data = json.loads(controls.read_text())
+    validate_control_set(data, experiment.task_ids)
     if data["status"] != "completed":
         raise ValueError("CPU controls did not complete")
     for case in data["cases"]:

@@ -11,6 +11,7 @@ from typing import Any
 
 from gemma_agent_dev.candidates.evidence import Candidate, archive_files, content_id
 from gemma_agent_dev.common.artifacts import file_hash
+from gemma_agent_dev.common.events import event, logged
 from gemma_agent_dev.submission.api import KaggleGateway
 from gemma_agent_dev.submission.config import SubmissionSettings, timestamp
 from gemma_agent_dev.submission.state import SubmissionAttempt, SubmissionRecord, SubmissionState
@@ -25,6 +26,7 @@ def description(attempt: SubmissionAttempt) -> str:
     return f"gemma-auto:{attempt['token']}:{attempt['candidate']}"
 
 
+@logged("submission.sync")
 def synchronize(
     state: SubmissionState, gateway: KaggleGateway, settings: SubmissionSettings, now: datetime
 ) -> dict[str, int]:
@@ -81,6 +83,7 @@ def synchronize(
     return dict(limits)
 
 
+@logged("submission.decide")
 def decide(
     state: SubmissionState, settings: SubmissionSettings, limits: dict[str, int], now: datetime
 ) -> tuple[Candidate | None, str]:
@@ -126,6 +129,7 @@ def update_incidents(state: SubmissionState, active: set[str]) -> bool:
     return bool(added)
 
 
+@logged("submission.run")
 def execute_run(
     state: SubmissionState,
     store: StateStore,
@@ -239,6 +243,7 @@ def execute_run(
 def result(
     state: SubmissionState, settings: SubmissionSettings, reason: str, notify: bool, stop: bool
 ) -> dict[str, Any]:
+    event("submission.decision", reason_code=reason, count=len(state["attempts"]))
     return {
         "reason": reason,
         "notify": notify,

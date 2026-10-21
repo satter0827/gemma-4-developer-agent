@@ -16,6 +16,9 @@ from typing import Any
 
 from gemma_agent_dev.candidates.archive import extract_archive, validate_references
 from gemma_agent_dev.common.artifacts import file_hash, inventory, new_run_id, write_json
+from gemma_agent_dev.common.events import bundle_session, context, event
+from gemma_agent_dev.common.events import phase as log_phase
+from gemma_agent_dev.evaluation.analysis import emit_tool_events
 from gemma_agent_dev.evaluation.config import RuntimeSettings
 from gemma_agent_dev.evaluation.official import select_tasks, verify_controls
 from gemma_agent_dev.notebooks.environment import install_wheelhouse
@@ -45,11 +48,9 @@ def validate_evaluation(output: Path, result: Any) -> dict[str, str]:
     return hashes
 
 
-def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) -> None:
+def _run(root: Path, provenance: dict[str, Any], *, verify_only: bool, output: Path) -> None:
     config = RuntimeSettings.load(root / "runtime.json").as_dict()
-    run_id = new_run_id()
-    output = Path(config["paths"]["output"]) / run_id
-    output.mkdir(parents=True, exist_ok=False)
+    run_id = output.name
     os.chdir(output)
     manifest: dict[str, Any] = {
         "schema_version": 1,
@@ -71,6 +72,7 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
     failure: BaseException | None = None
 
     def phase(name: str) -> None:
+        event("evaluation.phase", stage=name)
         manifest["phase"] = name
         write_json(manifest_path, manifest)
         print(f"[{run_id}] {name}", flush=True)
@@ -103,6 +105,8 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
             evaluate,
             expected_model,
             make_validator,
+            start_model,
+            stop_model,
         )
 
         phase("prepare_submission")
@@ -191,7 +195,6 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
             )
         }
         if not verify_only:
-            import litellm
             import torch
 
             phase("start_model")
@@ -203,10 +206,7 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
                 raise RuntimeError(
                     f"Expected {config['vllm']['tensor_parallel_size']} GPUs, got {gpu_count}"
                 )
-            litellm.drop_params = True
-            model_start = time.perf_counter()
-            server.start()
-            manifest["timings"]["model_startup_seconds"] = time.perf_counter() - model_start
+            manifest["timings"]["model_startup_seconds"] = start_model(server, config)
             phase("evaluate")
             evaluation_start = time.perf_counter()
             result = asyncio.run(
@@ -215,6 +215,11 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
             manifest["timings"]["evaluation_seconds"] = time.perf_counter() - evaluation_start
             phase("validate_results")
             manifest["evaluation_artifacts"] = validate_evaluation(output, result)
+            if "max_artifact_bytes" in candidate:
+                from gemma_agent_dev.evaluation.results import load_run
+
+                for task_id in ids:
+                    emit_tool_events(load_run(output), task_id, candidate["max_artifact_bytes"])
         if inventory(submission) != manifest["submission_files"]:
             raise ValueError("Validated submission changed")
     except BaseException as error:
@@ -223,7 +228,7 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
     # Cleanup must run even when manifest storage is unavailable.
     if server is not None:
         try:
-            server.stop()
+            stop_model(server)
         except BaseException as error:
             manifest["cleanup_error"] = f"{type(error).__name__}: {error}"
             failure = failure or error
@@ -248,3 +253,19 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
             print(f"Cannot save failure manifest: {save_error}", file=sys.stderr)
     if failure is not None:
         raise failure
+
+
+def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) -> None:
+    runtime = RuntimeSettings.load(root / "runtime.json")
+    output = Path(runtime.paths.output) / new_run_id()
+    output.mkdir(parents=True, exist_ok=False)
+    with (
+        bundle_session(root, output, provenance),
+        context(session_id=output.name),
+        log_phase("evaluation.session"),
+    ):
+        try:
+            _run(root, provenance, verify_only=verify_only, output=output)
+        except BaseException:
+            event("evaluation.exception", level="ERROR", exception=True)
+            raise
