@@ -17,6 +17,7 @@ from gemma_agent_dev.candidates import extract_archive, validate_references
 from gemma_agent_dev.config import (
     EvaluationSettings,
     RuntimeSettings,
+    SamplingSettings,
     mapping,
     positive,
     project_path,
@@ -31,7 +32,12 @@ class PreflightSettings:
     root: Path
     config_path: Path
     agent_dir: Path
+    profiles: Path
+    profile: str
+    purpose: str
     evaluation_config: Path
+    instruction: Path
+    task_selection: Path | None
     runtime_config: Path
     diagnostic_config: Path
     adapter_archive: Path
@@ -41,17 +47,26 @@ class PreflightSettings:
     quality_timeout_seconds: int
 
     @classmethod
-    def load(cls, root: Path, path: Path) -> "PreflightSettings":
+    def load(cls, root: Path, path: Path, profile: str) -> "PreflightSettings":
         root = root.resolve()
         path = project_path(root, str(path))
         data = mapping(
             yaml.safe_load(path.read_text()),
-            {f.name for f in fields(cls)} - {"root", "config_path"},
+            {f.name for f in fields(cls)}
+            - {
+                "root",
+                "config_path",
+                "profile",
+                "purpose",
+                "evaluation_config",
+                "instruction",
+                "task_selection",
+            },
             "preflight",
         )
         for key in (
             "agent_dir",
-            "evaluation_config",
+            "profiles",
             "runtime_config",
             "diagnostic_config",
             "adapter_archive",
@@ -65,7 +80,7 @@ class PreflightSettings:
             raise ValueError("Preflight output must stay inside artifacts/preflight")
         for key in (
             "agent_dir",
-            "evaluation_config",
+            "profiles",
             "runtime_config",
             "diagnostic_config",
             "adapter_archive",
@@ -78,18 +93,44 @@ class PreflightSettings:
                 raise ValueError(f"Missing or overlapping preflight input: {key}")
         if file_hash(data["adapter_archive"]) != data["adapter_sha256"]:
             raise ValueError("Adapter archive checksum mismatch")
+        profiles = yaml.safe_load(data["profiles"].read_text())
+        if not isinstance(profiles, dict) or profile not in profiles:
+            raise ValueError("Unknown execution profile")
+        selected = mapping(
+            profiles[profile],
+            {"purpose", "evaluation_config", "instruction", "task_selection"},
+            "profile",
+        )
+        if selected["purpose"] not in {"smoke", "comparison"}:
+            raise ValueError("Invalid profile purpose")
+        for key in ("evaluation_config", "instruction"):
+            selected[key] = project_path(root, selected[key])
+            if not selected[key].is_file():
+                raise ValueError(f"Missing profile input: {key}")
+        if selected["task_selection"] is not None:
+            selected["task_selection"] = project_path(root, selected["task_selection"])
+        if (selected["purpose"] == "comparison") != (selected["task_selection"] is not None):
+            raise ValueError("Comparison profiles require qualified tasks")
+        data.update(selected)
         EvaluationSettings.load(data["evaluation_config"])
         runtime = RuntimeSettings.load(data["runtime_config"])
         diagnostics = DiagnosticSettings.load(root, data["diagnostic_config"])
         if diagnostics.runtime.as_dict() != runtime.as_dict():
             raise ValueError("Preflight and diagnostic runtime settings differ")
-        return cls(root=root, config_path=path, **data)
+        SamplingSettings.load(data["agent_dir"] / "configs/sampling.yaml", runtime)
+        if data["task_selection"] is not None:
+            from gemma_agent_dev.qualification import load_selection
+
+            load_selection(root, data["task_selection"])
+        return cls(root=root, config_path=path, profile=profile, **data)
 
     def inputs(self) -> dict[str, str]:
         paths = [
             self.config_path,
             self.adapter_archive,
+            self.profiles,
             self.evaluation_config,
+            self.instruction,
             self.runtime_config,
             self.diagnostic_config,
         ]
@@ -101,8 +142,17 @@ class PreflightSettings:
             )
         paths.extend(self.root / name for name in ("Makefile", "pyproject.toml", "uv.lock"))
         diagnostics = DiagnosticSettings.load(self.root, self.diagnostic_config)
-        paths.extend([diagnostics.tasks_file, diagnostics.lock_file, diagnostics.requirements])
-        paths.extend(t.generated_patch for t in diagnostics.tasks)
+        paths.extend(
+            [
+                diagnostics.catalog_path,
+                diagnostics.tasks_file,
+                diagnostics.lock_file,
+                diagnostics.requirements,
+            ]
+        )
+        if self.task_selection is not None:
+            paths.append(self.task_selection)
+        paths.extend(t.generated_patch for t in diagnostics.tasks if t.generated_patch is not None)
         paths.extend(p for p in self.agent_dir.rglob("*") if p.is_file())
         return {p.relative_to(self.root).as_posix(): file_hash(p) for p in sorted(set(paths))}
 
@@ -117,17 +167,27 @@ def check_installation(root: Path) -> None:
         raise ValueError("Installed development package is stale; run make setup")
 
 
-def run(root: Path, config: Path) -> Path:
+def run(root: Path, config: Path, profile: str) -> Path:
     from gemma_agent_dev.diagnostic_bundle import verified_spec
     from gemma_agent_dev.diagnostics import diagnose
 
-    settings = PreflightSettings.load(root, config)
+    settings = PreflightSettings.load(root, config, profile)
     check_installation(settings.root)
     before = settings.inputs()
     output = settings.output_dir / new_run_id()
     output.mkdir(parents=True, exist_ok=False)
     report: dict[str, Any] = {
         "kind": "preflight",
+        "profile": profile,
+        "purpose": settings.purpose,
+        "execution": {
+            "evaluation": EvaluationSettings.load(settings.evaluation_config).as_dict(),
+            "sampling": SamplingSettings.load(
+                settings.agent_dir / "configs/sampling.yaml",
+                RuntimeSettings.load(settings.runtime_config),
+            ).__dict__,
+            "model_source": RuntimeSettings.load(settings.runtime_config).model_source,
+        },
         "status": "running",
         "config": str(settings.config_path.relative_to(settings.root)),
         "inputs": before,
@@ -163,6 +223,8 @@ def run(root: Path, config: Path) -> Path:
             # Only adapters are reused; no historical agent settings enter the candidate.
             shutil.copytree(extracted / "adapters", submission / "adapters")
             shutil.copyfile(settings.evaluation_config, submission / "eval_config.yaml")
+            # Change only the main instruction; shared agents and sampling stay fixed.
+            shutil.copyfile(settings.instruction, submission / "prompts/system.md")
             report["files"] = package_submission(
                 submission,
                 output / "submission.zip",
@@ -189,7 +251,7 @@ def load_report(root: Path, path: Path) -> tuple[PreflightSettings, dict[str, An
     report = json.loads(path.read_text())
     if report.get("kind") != "preflight" or report.get("status") != "completed":
         raise ValueError("Preflight did not complete")
-    settings = PreflightSettings.load(root, Path(report["config"]))
+    settings = PreflightSettings.load(root, Path(report["config"]), report["profile"])
     if report["inputs"] != settings.inputs():
         raise ValueError("Preflight inputs changed; run preflight again")
     artifacts = inventory(path.parent)

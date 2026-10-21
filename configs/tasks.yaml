@@ -1,0 +1,150 @@
+tasks_file: artifacts/reference/tasks.jsonl
+tasks_sha256: e4b3fd60f69dbc2b9213e54eeb9636db78aefe92c1d06269d73d9f5f8f3c8ad6
+tasks:
+- instance_id: fastapi_15661
+  snapshot_sha256: 765e6af89ca3388c17d70f6b00edf02598cb708e8f62d6d6d4ef4d6f8bc471e6
+  test_paths:
+  - tests/test_prepare_release.py
+  source_roots:
+  - .
+  import_modules:
+  - fastapi
+  dependency_wheels: {}
+- instance_id: fastapi_15588
+  snapshot_sha256: b6d6ed611fdbacfd86e99ff4edbdf5f8b0bfe26cd92ed8006958882f518f02d2
+  test_paths:
+  - tests/test_sse.py
+  source_roots:
+  - .
+  import_modules:
+  - fastapi
+  dependency_wheels: {}
+- instance_id: fastapi_14786
+  snapshot_sha256: f61245555280454c043454f59f852e6fb10d5390bc7ddade0e8136684cf360d5
+  test_paths:
+  - tests/test_security_http_base.py
+  - tests/test_security_oauth2_authorization_code_bearer.py
+  source_roots:
+  - .
+  import_modules:
+  - fastapi
+  dependency_wheels:
+    dirty_equals-0.11-py3-none-any.whl: b1d7093273fc2f9be12f443a8ead954ef6daaf6746fd42ef3a5616433ee85286
+- instance_id: fastapi_14360
+  snapshot_sha256: 67b9aa2226446ec7623598dfc6fe7d4d1451d4f96a2fa16358fbae7cd6be0e0d
+  test_paths:
+  - tests/test_request_param_model_by_alias.py
+  source_roots:
+  - .
+  import_modules:
+  - fastapi
+  dependency_wheels:
+    dirty_equals-0.11-py3-none-any.whl: b1d7093273fc2f9be12f443a8ead954ef6daaf6746fd42ef3a5616433ee85286
+- instance_id: fastapi_14873
+  snapshot_sha256: 58cf6e48c2e243643ac5c6424902d34781a83f2dff918363f8d152bb60e3c0fb
+  test_paths:
+  - tests/test_router_events.py
+  source_roots:
+  - .
+  import_modules:
+  - fastapi
+  dependency_wheels:
+    dirty_equals-0.11-py3-none-any.whl: b1d7093273fc2f9be12f443a8ead954ef6daaf6746fd42ef3a5616433ee85286
+- instance_id: fastapi_14458
+  snapshot_sha256: d4c5aa2a97aa9852be358ada0abf0556af9b4d498acf2c3ba3738bed2815d6e5
+  test_paths:
+  - tests/test_dependency_class.py
+  source_roots:
+  - .
+  import_modules:
+  - fastapi
+  dependency_wheels:
+    dirty_equals-0.11-py3-none-any.whl: b1d7093273fc2f9be12f443a8ead954ef6daaf6746fd42ef3a5616433ee85286
+- instance_id: requests_7315
+  snapshot_sha256: be20432ae7d54b96a5532c98ac545798bb76237376c7fd546e2275f7f19e93ac
+  test_paths:
+  - tests/test_adapters.py
+  source_roots:
+  - src
+  - .
+  import_modules:
+  - requests
+  dependency_wheels: {}
+- instance_id: requests_7309
+  snapshot_sha256: cf8f38184e2a3d4d4f89ef7028c27fe80b09e5ffe912f19f37585899d368c089
+  test_paths:
+  - tests/test_utils.py
+  source_roots:
+  - src
+  - .
+  import_modules:
+  - requests
+  dependency_wheels: {}
+- instance_id: requests_7328
+  snapshot_sha256: 47f35331fd2dc1d976eeb2aeff5f8aa376cd005911bf35ce164161931a97d8c9
+  test_paths:
+  - tests/test_requests.py
+  source_roots:
+  - src
+  - .
+  import_modules:
+  - requests
+  dependency_wheels: {}
+- instance_id: requests_7505
+  snapshot_sha256: c5f3493e63b57edf44e592729b271fbf5e8aa2ed7da3fc7828f5a9821d3bab99
+  test_paths:
+  - tests/test_requests.py
+  source_roots:
+  - src
+  - .
+  import_modules:
+  - requests
+  dependency_wheels: {}
+- instance_id: requests_7433
+  snapshot_sha256: 96292b6471c5f428feedcbf65a013c234ac9e2a0ced8b802d7450720ba9d22f3
+  test_paths:
+  - tests/test_requests.py
+  source_roots:
+  - src
+  - .
+  import_modules:
+  - requests
+  dependency_wheels: {}
+- instance_id: rich_3052
+  snapshot_sha256: 2b57a80f5b519b99fbea9f908d961daf14035bd2a8b12bdb9b6191ca3a1dfe47
+  test_paths:
+  - tests/test_prompt.py
+  source_roots:
+  - .
+  import_modules:
+  - rich
+  dependency_wheels: {}
+- instance_id: rich_3180
+  snapshot_sha256: eebbc8e72764dc3a2301061c1d253644153cc94098e76c3671e02cc7ec26b33d
+  test_paths:
+  - tests/test_cells.py
+  - tests/test_text.py
+  source_roots:
+  - .
+  import_modules:
+  - rich
+  dependency_wheels: {}
+- instance_id: rich_3130
+  snapshot_sha256: 208ec211fdb8819f192660f95d8476ffb43e4de5c068facc7430664306738536
+  test_paths:
+  - tests/test_markdown.py
+  source_roots:
+  - .
+  import_modules:
+  - rich
+  dependency_wheels: {}
+- instance_id: rich_3278
+  snapshot_sha256: bda96e09e9e02fa372b2cf6c5f3f2760f97d292fb531cc631564632940d6a453
+  test_paths:
+  - tests/test_ansi.py
+  source_roots:
+  - .
+  import_modules:
+  - rich
+  dependency_wheels: {}
+wheel_cache: artifacts/reference/task-wheels

@@ -11,7 +11,9 @@ from pathlib import Path
 from gemma_agent_dev.artifacts import file_hash, write_json
 
 
-def install_wheelhouse(directory: Path, output: Path, startup_timeout: int) -> None:
+def install_wheelhouse(
+    directory: Path, output: Path, startup_timeout: int, expected: dict[str, str]
+) -> None:
     environment = {
         "LITELLM_LOCAL_MODEL_COST_MAP": "True",
         "TRANSFORMERS_NO_TF": "1",
@@ -22,11 +24,14 @@ def install_wheelhouse(directory: Path, output: Path, startup_timeout: int) -> N
         "OTEL_SDK_DISABLED": "true",
         "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
     }
-    os.environ.update(environment)
     wheels = sorted(p for p in directory.glob("*.whl") if "cutlass" not in p.name.lower())
     if not wheels:
         raise FileNotFoundError(f"No official wheels in {directory}")
-    write_json(output / "wheelhouse.json", {p.name: file_hash(p) for p in wheels})
+    actual = {p.name: file_hash(p) for p in wheels}
+    if actual != expected:
+        raise ValueError("Official wheelhouse checksum mismatch")
+    write_json(output / "wheelhouse.json", actual)
+    os.environ.update(environment)
     for pattern in (
         "/usr/local/lib/python*/dist-packages/*cutlass*.pth",
         "/usr/local/lib/python*/site-packages/*cutlass*.pth",

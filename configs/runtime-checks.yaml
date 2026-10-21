@@ -1,0 +1,9 @@
+runtime_config: configs/runtime.json
+requirements: configs/runtime-checks.in
+lock_file: configs/runtime-checks.lock
+environment: artifacts/runtime-env
+wheel_cache: artifacts/reference/wheels
+output_dir: artifacts/runtime-checks
+timeout_seconds: 600
+python_version: '3.12'
+sampling: agent/configs/sampling.yaml

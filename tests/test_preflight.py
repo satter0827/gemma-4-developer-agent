@@ -80,7 +80,7 @@ def test_preflight_rejects_invalid_settings(preflight_project: Path, key: str, v
         (preflight_project / data["agent_dir"]).mkdir(parents=True)
     path.write_text(yaml.safe_dump(data))
     with pytest.raises(ValueError):
-        PreflightSettings.load(preflight_project, path)
+        PreflightSettings.load(preflight_project, path, "smoke")
 
 
 def test_preflight_requires_matching_diagnostic_runtime(preflight_project: Path) -> None:
@@ -92,7 +92,7 @@ def test_preflight_requires_matching_diagnostic_runtime(preflight_project: Path)
     config["runtime_config"] = "other.json"
     path.write_text(yaml.safe_dump(config))
     with pytest.raises(ValueError, match="runtime settings differ"):
-        PreflightSettings.load(preflight_project, path)
+        PreflightSettings.load(preflight_project, path, "smoke")
 
 
 def test_stale_installation_is_rejected(tmp_path: Path) -> None:
@@ -110,7 +110,7 @@ def test_failed_quality_does_not_create_candidate(
 
     monkeypatch.setattr(preflight, "process_group", fail)
     with pytest.raises(subprocess.CalledProcessError):
-        preflight.run(preflight_project, Path("preflight.yaml"))
+        preflight.run(preflight_project, Path("preflight.yaml"), "smoke")
     report = next((preflight_project / "artifacts/preflight").glob("*/report.json"))
     assert json.loads(report.read_text())["status"] == "failed"
     assert not (report.parent / "submission.zip").exists()
@@ -134,7 +134,7 @@ def test_quality_timeout_stops_make_and_its_descendants(preflight_project: Path)
         f"verify:\n\t{shlex.quote(sys.executable)} {shlex.quote(str(script))}\n"
     )
     with pytest.raises(subprocess.TimeoutExpired):
-        preflight.run(preflight_project, Path("preflight.yaml"))
+        preflight.run(preflight_project, Path("preflight.yaml"), "smoke")
     report_path = next((preflight_project / "artifacts/preflight").glob("*/report.json"))
     report = json.loads(report_path.read_text())
     assert report["status"] == "failed" and "TimeoutExpired" in report["error"]

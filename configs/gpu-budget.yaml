@@ -1,0 +1,5 @@
+quota_hours: 4
+reserve_hours: 1
+max_runs: 3
+runtime_config: configs/runtime.json
+quota_per_wall_hour: 2

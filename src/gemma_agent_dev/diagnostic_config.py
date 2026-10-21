@@ -3,7 +3,7 @@
 import hashlib
 import json
 import re
-from dataclasses import dataclass, fields
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +11,7 @@ import yaml
 
 from gemma_agent_dev.artifacts import file_hash
 from gemma_agent_dev.config import RuntimeSettings, mapping, positive, project_path
+from gemma_agent_dev.task_catalog import TaskCatalog, TaskSpec
 
 
 @dataclass(frozen=True)
@@ -21,12 +22,9 @@ class Replacement:
 
 
 @dataclass(frozen=True)
-class DiagnosticTask:
-    instance_id: str
-    snapshot_sha256: str
-    test_paths: list[str]
-    generated_patch: Path
-    generated_sha256: str
+class DiagnosticTask(TaskSpec):
+    generated_patch: Path | None
+    generated_sha256: str | None
     probe_replacements: list[Replacement]
     probe_expected_pass: bool
     generated_expected_pass: bool
@@ -43,6 +41,8 @@ class DiagnosticTask:
         return "passed" if passed else "failed"
 
     def patches(self, task: dict[str, Any]) -> dict[str, str]:
+        if self.generated_patch is None:
+            return {"reference": task["patch"], "unmodified": ""}
         if file_hash(self.generated_patch) != self.generated_sha256:
             raise ValueError(f"Generated patch checksum mismatch: {self.instance_id}")
         generated = self.generated_patch.read_text()
@@ -66,6 +66,7 @@ class DiagnosticSettings:
     root: Path
     config_path: Path
     runtime_path: Path
+    catalog_path: Path
     runtime: RuntimeSettings
     tasks_file: Path
     tasks_sha256: str
@@ -84,7 +85,13 @@ class DiagnosticSettings:
     def load(cls, root: Path, config: Path) -> "DiagnosticSettings":
         root = root.resolve()
         config_path = project_path(root, str(config))
-        names = {f.name for f in fields(cls)} - {"root", "config_path", "runtime"}
+        names = {f.name for f in fields(cls)} - {
+            "root",
+            "config_path",
+            "runtime",
+            "tasks_file",
+            "tasks_sha256",
+        }
         try:
             document = yaml.safe_load(config_path.read_text())
         except yaml.YAMLError as error:
@@ -94,7 +101,7 @@ class DiagnosticSettings:
             name: project_path(root, value[name])
             for name in (
                 "runtime_path",
-                "tasks_file",
+                "catalog_path",
                 "cache_dir",
                 "environments_dir",
                 "output_dir",
@@ -113,13 +120,12 @@ class DiagnosticSettings:
             for other in storage[index + 1 :] + protected:
                 if directory.is_relative_to(other) or other.is_relative_to(directory):
                     raise ValueError("Diagnostic storage must not overlap other storage")
-        for name in ("runtime_path", "tasks_file", "requirements", "lock_file"):
+        for name in ("runtime_path", "catalog_path", "requirements", "lock_file"):
             if not paths[name].is_file():
                 raise ValueError(f"Diagnostic input must be a file: {name}")
-        if not isinstance(value["tasks_sha256"], str) or not re.fullmatch(
-            r"[a-f0-9]{64}", value["tasks_sha256"]
-        ):
-            raise ValueError("Expected tasks SHA-256")
+        catalog = TaskCatalog.load(root, paths["catalog_path"])
+        paths["tasks_file"] = catalog.tasks_file
+        value["tasks_sha256"] = catalog.tasks_sha256
         if value["python_version"] != "3.12":
             raise ValueError("Diagnostics require Python 3.12")
         if not isinstance(value["kernel_id"], str) or not re.fullmatch(
@@ -138,31 +144,39 @@ class DiagnosticSettings:
             raise ValueError("Expected diagnostic tasks")
         tasks = []
         for raw in value["tasks"]:
-            data = mapping(raw, {f.name for f in fields(DiagnosticTask)}, "diagnostic task")
+            data = mapping(
+                raw,
+                ({f.name for f in fields(DiagnosticTask)} - {f.name for f in fields(TaskSpec)})
+                | {"instance_id"},
+                "diagnostic task",
+            )
+            if data["instance_id"] not in catalog.tasks:
+                raise ValueError("Unknown diagnostic task ID")
+            data = {**asdict(catalog.tasks[data["instance_id"]]), **data}
             if not isinstance(data["instance_id"], str):
                 raise ValueError("Invalid diagnostic task ID")
-            test_paths = data["test_paths"]
-            if (
-                not isinstance(test_paths, list)
-                or not test_paths
-                or any(
-                    not isinstance(p, str)
-                    or not p.endswith(".py")
-                    or Path(p).is_absolute()
-                    or ".." in Path(p).parts
-                    for p in test_paths
-                )
-                or len(test_paths) != len(set(test_paths))
-            ):
-                raise ValueError("Expected relative Python test paths")
             if any(
                 type(data[k]) is not bool
                 for k in ("probe_expected_pass", "generated_expected_pass")
             ):
                 raise ValueError("Expected probe outcome boolean")
             for key in ("generated_sha256", "snapshot_sha256"):
+                if (
+                    key == "generated_sha256"
+                    and data["generated_patch"] is None
+                    and data[key] is None
+                ):
+                    continue
                 if not isinstance(data[key], str) or not re.fullmatch(r"[a-f0-9]{64}", data[key]):
                     raise ValueError(f"Expected SHA-256: {key}")
+            if (data["generated_patch"] is None) != (data["generated_sha256"] is None):
+                raise ValueError("Generated patch and hash must be present together")
+            if data["generated_patch"] is None and (
+                data["probe_replacements"]
+                or data["generated_expected_pass"]
+                or data["probe_expected_pass"]
+            ):
+                raise ValueError("Control-only diagnostics cannot declare generated outcomes")
             changes = []
             if not isinstance(data["probe_replacements"], list):
                 raise ValueError("Expected diagnostic replacements")
@@ -176,13 +190,15 @@ class DiagnosticSettings:
                 DiagnosticTask(
                     **{
                         **data,
-                        "generated_patch": project_path(root, data["generated_patch"]),
+                        "generated_patch": project_path(root, data["generated_patch"])
+                        if data["generated_patch"] is not None
+                        else None,
                         "probe_replacements": changes,
                     }
                 )
             )
-        if [t.instance_id for t in tasks] != runtime.task_ids:
-            raise ValueError("Diagnostic task order must match the shared runtime task set")
+        if not tasks or len({t.instance_id for t in tasks}) != len(tasks):
+            raise ValueError("Empty or duplicate diagnostic tasks")
         for task in tasks:
             collection_cases = task.collection_error_cases
             allowed = {"unmodified", "generated"} | (
@@ -210,9 +226,9 @@ class DiagnosticSettings:
         )
         inputs = [
             config_path,
-            *(paths[n] for n in ("runtime_path", "tasks_file", "requirements", "lock_file")),
+            *(paths[n] for n in ("runtime_path", "catalog_path", "requirements", "lock_file")),
         ]
-        inputs.extend(task.generated_patch for task in tasks)
+        inputs.extend(task.generated_patch for task in tasks if task.generated_patch is not None)
         if any(path.is_relative_to(directory) for path in inputs for directory in storage):
             raise ValueError("Diagnostic inputs must stay outside managed storage")
         settings.read_tasks()
@@ -221,21 +237,8 @@ class DiagnosticSettings:
     def read_tasks(self) -> dict[str, dict[str, Any]]:
         if file_hash(self.tasks_file) != self.tasks_sha256:
             raise ValueError("Task data checksum mismatch")
-        records: dict[str, dict[str, Any]] = {}
-        for line in self.tasks_file.read_text().splitlines():
-            task = json.loads(line)
-            if not isinstance(task, dict) or not isinstance(task.get("instance_id"), str):
-                raise ValueError("Invalid diagnostic task record")
-            task_id = task["instance_id"]
-            if task_id in self.runtime.task_ids:
-                if task_id in records or any(
-                    not isinstance(task.get(k), str) or not task[k].strip()
-                    for k in ("repo", "base_commit", "patch", "test_patch", "problem_statement")
-                ):
-                    raise ValueError("Invalid or duplicate diagnostic task data")
-                records[task_id] = task
-        if set(records) != set(self.runtime.task_ids):
-            raise ValueError("Diagnostic task data is incomplete")
+        records = TaskCatalog.load(self.root, self.catalog_path).read_tasks()
+        records = {t.instance_id: records[t.instance_id] for t in self.tasks}
         for task in self.tasks:
             test_paths = re.findall(
                 r"^\+\+\+ b/(.+)$", records[task.instance_id]["test_patch"], re.M
@@ -249,6 +252,7 @@ class DiagnosticSettings:
         paths = [
             self.config_path,
             self.runtime_path,
+            self.catalog_path,
             self.tasks_file,
             self.requirements,
             self.lock_file,
@@ -258,10 +262,12 @@ class DiagnosticSettings:
             for name in (
                 "diagnostics.py",
                 "diagnostic_config.py",
-                "diagnostic_results.py",
+                "test_evidence.py",
                 "config.py",
                 "artifacts.py",
                 "processes.py",
+                "provenance.py",
+                "task_catalog.py",
             )
         )
         hashes = {p.relative_to(self.root).as_posix(): file_hash(p) for p in paths}

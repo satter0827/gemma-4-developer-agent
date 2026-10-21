@@ -9,18 +9,35 @@ import subprocess
 import tarfile
 import tempfile
 import time
+import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
 from gemma_agent_dev.artifacts import file_hash, inventory, new_run_id, write_json
 from gemma_agent_dev.diagnostic_config import DiagnosticSettings, DiagnosticTask
-from gemma_agent_dev.diagnostic_results import diagnostic_evidence
 from gemma_agent_dev.processes import process_group
+from gemma_agent_dev.provenance import test_environment, validate_origins
+from gemma_agent_dev.task_catalog import TaskCatalog
+from gemma_agent_dev.test_evidence import diagnostic_evidence
 
 
 def digest_text(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+def source_inventory(root: Path) -> dict[str, str]:
+    """Preserve official internal links without allowing links outside a snapshot."""
+    files = {}
+    for path in sorted(root.rglob("*")):
+        name = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            if not path.resolve().is_relative_to(root.resolve()) or not path.exists():
+                raise ValueError(f"Unsafe snapshot link: {name}")
+            files[name] = "symlink:" + os.readlink(path)
+        elif path.is_file():
+            files[name] = file_hash(path)
+    return files
 
 
 def environment(settings: DiagnosticSettings) -> dict[str, str]:
@@ -59,6 +76,29 @@ def command(args: list[str], *, cwd: Path, timeout: int, env: dict[str, str] | N
 
 
 def prepare(settings: DiagnosticSettings) -> Path:
+    catalog = TaskCatalog.load(settings.root, settings.catalog_path)
+    catalog.wheel_cache.mkdir(parents=True, exist_ok=True)
+    for task in settings.tasks:
+        for name, digest in task.dependency_wheels.items():
+            wheel = catalog.wheel_cache / name
+            if not wheel.exists():
+                package, version, _ = name.split("-", 2)
+                with urllib.request.urlopen(
+                    f"https://pypi.org/pypi/{package}/{version}/json",
+                    timeout=settings.timeout_seconds,
+                ) as response:
+                    metadata = json.load(response)
+                url = next(
+                    item["url"]
+                    for item in metadata["urls"]
+                    if item["filename"] == name and item["digests"]["sha256"] == digest
+                )
+                with urllib.request.urlopen(url, timeout=settings.timeout_seconds) as response:
+                    content = response.read()
+                if hashlib.sha256(content).hexdigest() != digest:
+                    raise ValueError("Downloaded task wheel changed")
+                wheel.write_bytes(content)
+    catalog.wheels([t.instance_id for t in settings.tasks])
     tasks = settings.read_tasks()
     (settings.cache_dir / "local-success.json").unlink(missing_ok=True)
     settings.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -107,9 +147,9 @@ def prepare(settings: DiagnosticSettings) -> Path:
                 (extracted / ".snapshot-head").write_text(head + "\n")
                 # Git history is not needed to replay a patch and is never executed.
                 shutil.rmtree(extracted / ".git")
-                expected_files = inventory(extracted)
+                expected_files = source_inventory(extracted)
                 if source.exists():
-                    if inventory(source) != expected_files:
+                    if source_inventory(source) != expected_files:
                         raise ValueError(f"Cached source changed: {task.instance_id}")
                 else:
                     extracted.rename(source)
@@ -120,7 +160,7 @@ def prepare(settings: DiagnosticSettings) -> Path:
                         "files": expected_files,
                     },
                 )
-        hashes = inventory(source)
+        hashes = source_inventory(source)
         receipt = json.loads(source_receipt.read_text())
         if receipt["snapshot_sha256"] != task.snapshot_sha256 or receipt["files"] != hashes:
             raise ValueError(f"Cached source changed: {task.instance_id}")
@@ -183,6 +223,9 @@ def installed_environment(python: Path, settings: DiagnosticSettings) -> dict[st
 
 
 def check_prepared(settings: DiagnosticSettings) -> dict[str, Any]:
+    TaskCatalog.load(settings.root, settings.catalog_path).wheels(
+        [t.instance_id for t in settings.tasks]
+    )
     prepared = json.loads((settings.cache_dir / "prepared.json").read_text())
     if prepared["fingerprint"] != settings.fingerprint():
         raise ValueError("Diagnostic inputs changed; prepare the environments again")
@@ -191,7 +234,7 @@ def check_prepared(settings: DiagnosticSettings) -> dict[str, Any]:
         if file_hash(archive) != task.snapshot_sha256:
             raise ValueError("Cached snapshot changed")
         source = settings.cache_dir / "sources" / task.instance_id
-        if inventory(source) != prepared["sources"][task.instance_id]["files"]:
+        if source_inventory(source) != prepared["sources"][task.instance_id]["files"]:
             raise ValueError("Cached source changed")
         python = settings.environments_dir / task.instance_id / "bin/python"
         if installed_environment(python, settings) != prepared["environments"][task.instance_id]:
@@ -234,7 +277,9 @@ def run_case(
     try:
         with tempfile.TemporaryDirectory(dir=settings.root / "artifacts/tmp") as temporary:
             workspace = Path(temporary) / "workspace"
-            shutil.copytree(settings.cache_dir / "sources" / task.instance_id, workspace)
+            shutil.copytree(
+                settings.cache_dir / "sources" / task.instance_id, workspace, symlinks=True
+            )
             command(["git", "init", "-q"], cwd=workspace, timeout=settings.timeout_seconds)
             apply_patch(workspace, patch, output / "candidate.patch", settings.timeout_seconds)
             apply_patch(
@@ -243,7 +288,9 @@ def run_case(
             python = settings.environments_dir / task.instance_id / "bin/python"
             env = {
                 **environment(settings),
-                "PYTHONPATH": str(workspace),
+                **test_environment(
+                    workspace, task.source_roots, task.import_modules, output / "source-guard"
+                ),
                 "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
             }
             args = [
@@ -263,6 +310,7 @@ def run_case(
                     stdout=log,
                 ) as process:
                     record["exit_code"] = process.wait(timeout=settings.timeout_seconds)
+            record["source_origins"] = validate_origins(output / "source-guard/origins.json")
             outcome, counts = diagnostic_evidence(
                 record["exit_code"], output / "junit.xml", expected
             )

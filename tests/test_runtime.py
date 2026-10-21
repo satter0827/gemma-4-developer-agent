@@ -74,7 +74,6 @@ def test_pipeline_verifies_before_model_start_and_validates_saved_results(
     config["paths"]["data"] = str(data)
     config["paths"]["output"] = str(tmp_path / "results")
     (root / "configs/runtime.json").write_text(json.dumps(config))
-    config["paths"]["submission_export"] = str(tmp_path / "submission.zip")
     (root / "configs/runtime.json").write_text(json.dumps(config))
     with zipfile.ZipFile(root / "candidate.zip", "w") as archive:
         for path in (root / "agent").rglob("*"):
@@ -91,6 +90,10 @@ def test_pipeline_verifies_before_model_start_and_validates_saved_results(
                 "files": inventory(root / "agent"),
                 "max_unpacked_bytes": 1000000,
                 "tasks_sha256": file_hash(data / "tasks.jsonl"),
+                "sources": {
+                    task: {"source_roots": ["."], "import_modules": ["fastapi"]}
+                    for task in config["task_ids"]
+                },
                 "snapshots": {
                     task: file_hash(data / "snapshots" / (task + ".tgz"))
                     for task in config["task_ids"]
@@ -108,6 +111,9 @@ def test_pipeline_verifies_before_model_start_and_validates_saved_results(
     monkeypatch.setattr(runtime, "write_json", write)
     monkeypatch.chdir(root)
     monkeypatch.setattr(runtime, "install_wheelhouse", lambda *_: None)
+    monkeypatch.setattr(
+        "gemma_agent_dev.sandbox_sources.observe_sources", lambda *args: lambda: None
+    )
     monkeypatch.setattr(importlib.metadata, "version", lambda name: config["packages"][name])
     calls: list[str] = []
     configurations = []
@@ -272,9 +278,7 @@ def test_pipeline_verifies_before_model_start_and_validates_saved_results(
     assert calls[-1] == "stop"
     assert (output / "vllm.log").read_text() == "server log"
     assert not Path(Server.log_path).exists()
-    assert (tmp_path / "submission.zip").exists() is not failed
-    if not failed:
-        assert file_hash(tmp_path / "submission.zip") == candidate_sha
+    assert not (tmp_path / "submission.zip").exists()
     if verify_only:
         assert manifest["kind"] == "verification"
         assert "evaluate" not in calls

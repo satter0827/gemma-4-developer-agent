@@ -1,119 +1,132 @@
 # Gemma 4 Developer Agent
 
-KaggleのGemma 4 Developer Agent Competitionに向けた、提出エージェントと評価用CLIです。公式基盤を使用し、評価条件と提出物を追跡します。
+KaggleのGemma 4 Developer Agent Competitionに向けた、提出エージェントと評価用CLIです。評価対象、設定、成果物を固定し、環境の動作とエージェントの解決能力を分けて確認します。
 
-## 開発環境
+## 現在の評価
 
-Python 3.12、uv、Gitを使用します。Kaggleでの実行には、認証済みのKaggle CLIとコンペ参加が必要です。
+初回の正式提出IDは`57441297`、公開スコアは**0.01**です。同じZIPによる開発用評価はFastAPIの2課題で**0/2**でした。正式評価と開発用評価では対象課題が異なるため、この数値は矛盾しません。正式評価の課題別ログがないため、低スコアの原因を時間切れだけとは断定しません。
+
+2026年10月21日の別の開発用比較では、同じ6課題で現行指示が**2/6**、改善指示が**3/6**でした。主エージェントの指示だけを変え、実行コード・依存関係・設定・課題順を照合しています。生成結果12件の成否はMacでも再現しました。6課題の単回比較であり、正式評価への効果は未確認です。今回のGPU消費は2.83030 quota時間で、正式な再提出はしていません。
+
+診断ケースの一致数、プロジェクトのテスト件数・カバレッジ、エージェントの解決数、正式スコアは別の指標です。[採点差と公開情報](docs/research.md)と[検証状況](docs/validation.md)に証拠と限界を記載します。
+
+## 構成
+
+| 場所 | 役割 |
+|---|---|
+| `agent/` | 共通のモデル・LoRA・ツール宣言、生成設定、比較する主エージェントの指示 |
+| `configs/` | 共通課題定義、診断、実行プロファイル、CPU SDK環境、GPU予算 |
+| `src/gemma_agent_dev/` | 設定、診断、公式接続、Kaggle実行、結果分析、CLI |
+| `kaggle/` | バンドルの照合・展開と実行期限の適用 |
+| `tests/`、`scripts/` | 動作・構造・カバレッジの検証 |
+| `docs/` | 設計、運用、公開情報と検証記録 |
+| `artifacts/` | 参照入力、専用環境、診断、評価、分析、ログ。Git管理対象外 |
+
+## 準備
+
+Python 3.12、uv、Gitを使用します。公式入力の取得とKaggle実行には、認証済みKaggle CLIとコンペ参加が必要です。コマンドはリポジトリのルートで実行します。
 
 ```sh
 make setup
-make check
+make verify
+make cli ARGS='prepare-diagnostics --config configs/diagnostics/fastapi.yaml'
+make cli ARGS='prepare-diagnostics --config configs/diagnostics/comparison.yaml'
+make cli ARGS='prepare-runtime-checks --config configs/runtime-checks.yaml'
 ```
 
-コマンドはリポジトリのルートで実行します。開発環境はiCloud外に置きます。Makefileを通して実行すると、仮想環境、キャッシュ、一時ファイルはすべて`artifacts/`へ保存されます。通常のwheelとしてインストールし、コード変更後は`make setup`で更新します。`make check`は更新とすべての品質チェックを実行します。
+`make setup`は開発環境、`prepare-diagnostics`は課題のスナップショットとハッシュで固定したCPU依存、`prepare-runtime-checks`は公式SDKの専用CPU環境を準備します。開発環境と課題環境を共有せず、MacへLinux・CUDA用Wheelを導入しません。
 
-テストでは行カバレッジ90%以上、分岐カバレッジ80%以上をそれぞれ必須にします。行の実行だけでなく、設定の拒否や失敗時の停止も確認するための最低率です。設定は`pyproject.toml`の`tool.coverage_gate`にまとめています。
+準備だけが取得・依存更新を行います。通常の診断と事前検証は、準備済みの入力を使用します。入力の不足や変更を検出したら停止します。
 
-計測対象は`src/gemma_agent_dev/`、`kaggle/`、`scripts/`です。開発用テストと外部ライブラリは対象に含めません。個別モジュールやエラー処理の除外は追加していません。[coverage.pyの分岐計測](https://coverage.readthedocs.io/en/latest/branch.html)を使い、JSONの行・分岐件数から別々に判定します。端末の`Cover`列は両方を合わせた率なので、合否は最後の`line`・`branch`の表で確認してください。
-
-開発環境の準備後は`make coverage`でも再計測できます。`artifacts/coverage/`にJSON、HTML、判定表を出力し、毎回前の計測結果を消してから実行します。CIも`make check`で同じ基準を使い、判定表をジョブの概要へ、JSONとHTMLを`coverage`成果物へ保存します。閾値未達、分岐データなし、計測件数0はチェック失敗です。
-
-## ローカルでパッチを診断する
-
-保存済みパッチの失敗原因は、先にローカルのPython環境で確認します。
+## ローカル診断
 
 ```sh
-make cli ARGS='prepare-diagnostics --config configs/diagnostics/fastapi.yaml'
 make cli ARGS='diagnose --config configs/diagnostics/fastapi.yaml'
+make cli ARGS='qualify --config configs/comparison.yaml'
+make cli ARGS='check-runtime --config configs/runtime-checks.yaml'
 ```
 
-準備では公式スナップショット2件と、ハッシュで固定したCPU用依存関係を取得します。通常の診断ではネットワークやモデルを使用せず、ケースごとに新しい作業コピーでテストを実行します。原本と既存の評価結果は変更しません。
+既存2課題は、未修正・参照パッチ・保存された生成パッチ・原因を一つ変えた診断パッチの8条件で再現します。診断資産はエージェントへ渡しません。
 
-ローカル診断の完了後、同じ8条件をGPUなしのPrivate Notebookへ渡します。
+比較課題はFastAPI・Requests・Richから2件ずつ、事前に決めた順序で選びます。実際のテストプロセスが作業コピーを読み、未修正が失敗し参照パッチが通ることが採用条件です。補欠と除外理由を記録し、モデル実行前に`artifacts/qualification/qualified.json`へ固定します。固定後の再選定は拒否します。6課題が揃わなければGPU評価を行いません。
+
+`check-runtime`は合成入力でコンパイル、モデル・LoRA登録、生成リクエストと思考履歴を確認します。重みの読み込みや推論の検証はGPU側で行います。
+
+## 候補の固定とPrivate CPU
 
 ```sh
-make cli ARGS='prepare-kaggle --name diagnostic-cpu-20261020 --diagnostics-config configs/diagnostics/fastapi.yaml'
-kaggle kernels push -p artifacts/kaggle/diagnostic-cpu-20261020
+make cli ARGS='preflight --config configs/preflight.yaml --profile baseline'
+make cli ARGS='preflight --config configs/preflight.yaml --profile workflow'
 ```
 
-診断結果は`artifacts/diagnostics/`に保存し、公式のエージェント評価と分けます。診断パッチのテスト通過は、エージェントが課題を解決した実績へ加算しません。詳しくは[パッチ診断](docs/diagnostics.md)を参照してください。
+プロファイルの指定は必須です。`smoke`は1分・10ツールの動作確認、`baseline`と`workflow`は5分・30ツールの比較です。比較では主エージェントの指示だけを変え、モデル、LoRA、補助エージェント、ツール、生成設定を揃えます。thinking budgetは4096、seedは0です。seedだけで完全な再現性は保証しません。
 
-## 提出前の検証と正式提出
-
-開発環境と診断環境の準備後、現在のエージェントを一度だけZIPへ固定します。
-
-```sh
-make setup
-make cli ARGS='prepare-diagnostics --config configs/diagnostics/fastapi.yaml'
-make cli ARGS='preflight --config configs/preflight.yaml'
-```
-
-事前検証は品質・構造・パッチ診断・提出設定の参照・ZIPの展開前後の一致を確認します。通常の実行はオフラインです。入力が不足する場合は準備段階へ戻り、自動取得しません。`configs/preflight.yaml`には現在のエージェント、評価設定、保存済みZIPから再利用するLoRAの取得元とSHA-256を指定します。取得元ZIPは既存の公式評価`20261020T072100Z-e679cea7`の保存結果です。新しい環境では先にその入力を取得し、設定にあるSHA-256と照合してください。
-
-表示された検証記録を`REPORT`へ指定し、CPU検証とGPU事前評価に同じ候補を渡します。
+事前検証は品質チェックと既存8条件の診断を実行し、現在のエージェントと固定済み配布LoRAをZIPへ保存します。表示された検証記録を使います。
 
 ```sh
 REPORT=artifacts/preflight/実行ID/report.json
-make cli ARGS="prepare-kaggle --name candidate-cpu --preflight-report $REPORT --verify-only"
-kaggle kernels push -p artifacts/kaggle/candidate-cpu
+make cli ARGS="prepare-kaggle --name baseline-cpu --preflight-report $REPORT --verify-only"
+kaggle kernels push -p artifacts/kaggle/baseline-cpu
+kaggle kernels status satter0927/gemma-4-developer-agent-verification
 ```
 
-生成先の名前は毎回新しく指定します。既存フォルダーは上書きしません。CPUの公式コンパイルと2課題の参照検証を通過後、同じ記録からGPU用コードを生成します。
+NotebookはPrivate、インターネット無効、GPUなしです。公式コンパイルと同じ6課題の参照検証を行います。各候補で実行し、結果は別々の保存先へ取得します。既存8条件のCPU診断は`prepare-kaggle --name 名前 --diagnostics-config configs/diagnostics/fastapi.yaml`で別に生成できます。
 
 ```sh
-make cli ARGS="prepare-kaggle --name candidate-gpu --preflight-report $REPORT"
-kaggle kernels push -p artifacts/kaggle/candidate-gpu
-kaggle kernels status satter0927/gemma-4-developer-agent-baseline
-kaggle kernels logs satter0927/gemma-4-developer-agent-baseline --follow
+kaggle kernels output satter0927/gemma-4-developer-agent-verification -p artifacts/results/baseline-cpu --page-size 200 --file-pattern '^(artifacts/results/[^/]+/(?!submission/|wheel-links/).*|artifacts/jobs/.*)$'
 ```
 
-正常終了後、結果を新しい保存先へ取得します。展開した提出物や一時キャッシュを除き、正式提出用ZIPと検証記録を保存します。
+## Private GPU比較
+
+CPU結果の`manifest.json`を指定します。候補ZIP、実行ソース、課題順、公式Wheel、読み込み元の証拠が一致しなければGPU用コードを生成しません。
 
 ```sh
-kaggle kernels output satter0927/gemma-4-developer-agent-baseline -p artifacts/results/candidate-gpu --page-size 200 --file-pattern '^(submission.zip|artifacts/results/[^/]+/(?!submission/|wheel-links/).*)$'
+CPU=artifacts/results/baseline-cpu/artifacts/results/実行ID/manifest.json
+make cli ARGS="prepare-kaggle --name baseline-gpu --preflight-report $REPORT --cpu-report $CPU"
+kaggle quota --format json
+kaggle kernels push -p artifacts/kaggle/baseline-gpu
 ```
 
-Notebookは非公開で、インターネット接続は無効です。CPUではモデル起動を行わず、GPUではKaggle側のL4を使用します。MacのGPUは使いません。GPU事前評価の対象は2課題です。課題ごとの公式判定、パッチ、ログ、トレース、集計と終了処理を確認し、解決数0件でも正常完了と性能上の失敗を区別します。
-
-CPU・GPUのソースSHA-256、候補ZIP、依存関係、課題データ、評価設定を照合します。Kaggle上でサンプルからZIPを作り直しません。入力・証拠が変わった場合は事前検証からやり直します。Notebook実行は正式提出とは別です。
-
-全検証の正常終了後だけ`/kaggle/working/submission.zip`が出力されます。取得したZIPのSHA-256が検証記録と一致すること、Kaggleの参加状態と提出可能枠を確認して、同じファイルを提出します。
+GPUはKaggleのL4を使用し、ローカルGPUは使いません。各Notebookは準備から保存・終了まで45分を上限に、監視プロセスが子プロセス群を停止します。結果と監視記録を取得します。
 
 ```sh
-kaggle competitions submit gemma-4-developer-agent -f artifacts/results/candidate-gpu/submission.zip -m 'Initial validated agent'
-kaggle competitions submissions gemma-4-developer-agent --format json
+kaggle kernels output satter0927/gemma-4-developer-agent-baseline -p artifacts/results/baseline-gpu --page-size 200 --file-pattern '^(artifacts/results/[^/]+/(?!submission/|wheel-links/).*|artifacts/jobs/.*)$'
 ```
 
-提出ID・日時・ZIPのハッシュ・採点状態・公開スコアを記録します。受付が不明なときは提出一覧を確認し、同じ操作を繰り返しません。非公開課題の本番スコアは正式提出後に分かります。開発用Notebookのsubprocess環境と本番のDocker環境には差があるため、2課題の成功を本番全体の保証にしません。
+実行前に、公式APIと今回の実行記録から得た消費量・残枠・完了回数で判定します。下記の変数には観測値を指定します。
 
-## 開発規約
+```sh
+make cli ARGS="check-gpu-budget --config configs/gpu-budget.yaml --consumed-hours $CONSUMED_HOURS --remaining-hours $REMAINING_HOURS --completed-runs $COMPLETED_RUNS"
+```
 
-[コーディング規約](docs/coding-standards.md)に設定・定数・依存・結果保存の方針をまとめています。構造チェックは循環依存、依存方向、未分類モジュール、運用パラメータの直書きを検出します。`make verify`は準備済み環境のチェックだけを実行し、`make check`は開発環境を更新してから同じチェックを実行します。
+別の実行が動いている場合は`--active`を付けます。情報が不明なら実行せず、実行不可の判定は終了コード1になります。
 
-## 結果を確認する
+今回のGPU予算は最大4 quota時間分、そのうち1時間分を予備に確保します。`configs/gpu-budget.yaml`で管理し、実行前後の公式残枠を保存します。累積消費と次回最大消費と予備が上限を超える場合、残枠が不明な場合、別の実行が動いている場合は開始しません。自動再試行と同時実行は行いません。回復日時は公式の`kaggle quota`で確認します。
+
+現行指示と改善指示を同じ6課題へ順番に実行します。追加測定は予算内で最大1回です。改善が見えたら改善条件、それ以外は現行条件を6課題すべて再測定します。少数の公開課題の成績を正式評価の予測や改善の確定には使いません。
+
+この経路は正式提出用の`/kaggle/working/submission.zip`を出力・送信しません。候補ZIPは実行結果内に保持します。正式提出とPRの承認・マージは別の操作です。
+
+## 結果分析
 
 ```sh
 make cli ARGS='results'
 make cli ARGS='show RUN_ID'
-make cli ARGS='show RUN_ID --task fastapi_15661 --artifact patch'
+make cli ARGS='show RUN_ID --task 課題ID --artifact trace'
+make cli ARGS='show RUN_ID --task 課題ID --artifact patch'
 make cli ARGS='compare RUN_ID_A RUN_ID_B'
+make cli ARGS='analyze RUN_ID_A --other RUN_ID_B'
 ```
 
-`RUN_ID`には`results`で表示された実行IDを指定します。詳細ファイルは`patch`、`test-log`、`agent-log`、`trace`から選べます。元のログとトレースは保存時の内容で表示します。
+分析は`artifacts/analysis/`へ保存し、公式の結果を変更しません。課題単位の公式判定、採点ログの最終pytest集計、最初の編集試行、編集失敗、検証コマンド、パッチ保存履歴、制限の証拠を記録します。公式のツール消費回数とトレース上の全回数を分け、最終パッチとログもハッシュで参照できます。収集エラーを実行済みテストへ数えず、設定にあるタイムアウト値を実際の時間切れとは判定しません。検証コマンドを実行しただけでは解決と判定せず、取得できない情報は不明として扱います。
 
-一覧には状態、最後の実行段階、予定・完了・解決件数、解決率、所要時間、実行種別を表示します。参照検証と未完了評価の解決率は表示しません。参照検証はエージェント評価と比較できません。評価開始前に停止した実行は、未生成の評価ファイルを破損扱いせず、失敗状態を表示します。比較では課題ごとの結果と時間、実行条件の差を確認できます。プロンプト・エージェント設定・LoRAを含む提出ファイルの変更も表示します。正常な表示と結果未取得は終了コード0、読み込み・検証エラーは1、引数エラーは2です。
+## 品質と開発規約
 
-## 構成
+```sh
+make check
+make coverage
+```
 
-- `agent/`：提出するYAMLとプロンプト。配布LoRAは固定した取得元から候補の生成時に追加します。
-- `src/gemma_agent_dev/`：設定、パッチ診断、公式基盤との接続、Kaggle実行、結果処理、CLI。
-- `configs/`、`kaggle/`：実行条件とKaggle起動処理。
-- `tests/`、`scripts/`、`docs/`：テスト、品質チェック用スクリプト、設計、運用手順、検証状況。
-- `artifacts/`：Kaggle用コードは`kaggle/`、公式評価は`results/`、診断は`diagnostics/`、参照入力は`reference/`へ保存します。開発環境は`venv/`、課題用環境は`task-envs/`、キャッシュと一時ファイルは`cache/`と`tmp/`に置きます。すべてGit管理対象外です。
+formatter、lint、型チェック、構造テスト、動作テストを実行します。行90%以上・分岐80%以上を別々に必須とし、`artifacts/coverage/`にJSON、HTML、判定表を保存します。通常CIは外部課題の取得、公式SDKの取得、Kaggle、GPUを使用しません。
 
-初回提出候補のCPU検証とGPU事前評価は正常終了し、2課題の解決数は0/2でした。検証した同じZIPを提出ID`57441297`として正式提出しています。公開スコアは採点待ちです。詳しい条件と記録は検証状況にまとめています。
-
-詳しくは[設計](docs/design.md)、[評価と提出の手順](docs/evaluation.md)、[検証状況](docs/validation.md)を参照してください。
-
-GitHubリポジトリはPublic、開発用Kaggle NotebookはPrivateです。競技データ、パッチ、LoRA、実行ログ、認証情報はGitへ保存しません。
+[コーディング規約](docs/coding-standards.md)では設定値と定数、依存方向、循環参照の禁止、副作用と結果保存を定めます。[設計](docs/design.md)、[実行手順](docs/evaluation.md)、[パッチ診断](docs/diagnostics.md)も参照してください。競技データ、正解・診断パッチ、LoRA、実行ログ、認証情報はGitへ含めません。

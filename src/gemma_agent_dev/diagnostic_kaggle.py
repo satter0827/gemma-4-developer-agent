@@ -12,7 +12,7 @@ from typing import Any
 
 from gemma_agent_dev.artifacts import file_hash, inventory, write_json
 from gemma_agent_dev.config import RuntimeSettings
-from gemma_agent_dev.diagnostic_results import diagnostic_evidence
+from gemma_agent_dev.test_evidence import diagnostic_evidence
 
 
 def run(root: Path, provenance: dict[str, Any]) -> None:
@@ -22,8 +22,10 @@ def run(root: Path, provenance: dict[str, Any]) -> None:
 
     spec = json.loads((root / "diagnostics.json").read_text())
     runtime_file = root / "runtime.json"
-    write_json(runtime_file, spec["runtime"])
+    write_json(runtime_file, {**spec["runtime"], "task_ids": spec["task_ids"]})
     runtime = RuntimeSettings.load(runtime_file)
+    if set(runtime.task_ids) != set(spec["snapshots"]):
+        raise ValueError("Diagnostic task list and snapshots disagree")
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     output = Path(runtime.paths.output).parent / "diagnostics" / run_id
     output.mkdir(parents=True, exist_ok=False)
@@ -39,17 +41,24 @@ def run(root: Path, provenance: dict[str, Any]) -> None:
         "snapshots": spec["snapshots"],
         "timeout_seconds": spec["timeout_seconds"],
         "lock_sha256": spec["lock_sha256"],
+        "task_ids": runtime.task_ids,
         "cases": [],
     }
     write_json(output / "report.json", report)
     try:
-        install_wheelhouse(Path(runtime.paths.wheelhouse), output, runtime.vllm.startup_timeout)
+        install_wheelhouse(
+            Path(runtime.paths.wheelhouse),
+            output,
+            runtime.vllm.startup_timeout,
+            runtime.wheelhouse_hashes,
+        )
         versions = {name: importlib.metadata.version(name) for name in runtime.packages}
         if versions != runtime.packages:
             raise ValueError(f"Official package versions changed: {versions}")
         report["packages"] = {
             d.metadata["Name"]: d.version for d in importlib.metadata.distributions()
         }
+        spec["dependency_dir"] = str(root / "sandbox-wheels")
         asyncio.run(verify_cases(runtime, spec, output, report))
         report["status"] = "completed"
     except BaseException as error:
@@ -81,7 +90,12 @@ async def verify_cases(
         (task_id, name)
         for task_id in runtime.task_ids
         for name in (
-            ["reference", "unmodified", "generated"]
+            ["reference", "unmodified"]
+            + (
+                ["generated"]
+                if any(c["task_id"] == task_id and c["case"] == "generated" for c in spec["cases"])
+                else []
+            )
             + (
                 ["probe"]
                 if any(c["task_id"] == task_id and c["case"] == "probe" for c in spec["cases"])
@@ -105,6 +119,11 @@ async def verify_cases(
         display_mode="quiet",
     )
     evaluator = Evaluator(config)
+    from gemma_agent_dev.sandbox_sources import observe_sources
+
+    check_sources = observe_sources(
+        evaluator.sandbox, spec["sources"], output, Path(spec["dependency_dir"])
+    )
     original_exec = evaluator.sandbox.exec
     active_case: list[Path] = []
 
@@ -179,6 +198,7 @@ async def verify_cases(
             write_json(destination / "case.json", record)
             report["cases"].append(record)
             write_json(output / "report.json", report)
+        check_sources()
         print(f"{task_id}/{name}: {record}", flush=True)
         if not record["matched"]:
             raise RuntimeError(f"Official diagnostic outcome mismatch: {task_id}/{name}")

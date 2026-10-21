@@ -5,6 +5,7 @@ import io
 import os
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -16,9 +17,12 @@ def main(
     source_b64: str,
     provenance: dict[str, Any],
     *,
+    timeout_seconds: int,
+    progress_interval_seconds: int,
     verify_only: bool = False,
     diagnostic: bool = False,
 ) -> None:
+    start = time.monotonic()
     payload = base64.b64decode(source_b64, validate=True)
     if hashlib.sha256(payload).hexdigest() != provenance["source_sha256"]:
         raise ValueError("Source bundle checksum mismatch")
@@ -37,11 +41,17 @@ def main(
                     raise ValueError("Invalid source bundle path")
             archive.extractall(root)
         sys.path.insert(0, str(root / "src"))
-        if diagnostic:
-            from gemma_agent_dev.diagnostic_kaggle import run as run_diagnostics
+        from gemma_agent_dev.worker import run_bounded
 
-            run_diagnostics(root, provenance)
-            return
-        from gemma_agent_dev.runtime import run
-
-        run(root, provenance, verify_only=verify_only)
+        remaining = timeout_seconds - (time.monotonic() - start)
+        if remaining <= 0:
+            raise TimeoutError("Source extraction exceeded the notebook deadline")
+        run_bounded(
+            root,
+            provenance,
+            verify_only=verify_only,
+            diagnostic=diagnostic,
+            timeout=remaining,
+            progress_interval=progress_interval_seconds,
+            storage=ARTIFACTS_ROOT,
+        )
