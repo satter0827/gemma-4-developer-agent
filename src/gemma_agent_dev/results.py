@@ -199,12 +199,16 @@ def comparison_differences(left: Run, right: Run) -> list[str]:
     if left.kind != "evaluation" or right.kind != "evaluation":
         raise ValueError("Reference verification is not an agent evaluation")
     differences = []
-    if set(left.task_ids) != set(right.task_ids):
+    if left.task_ids != right.task_ids:
         differences.append("task_ids")
     for field in (
         "evaluation",
         "environment",
         "tasks_sha256",
+        "snapshots",
+        "wheelhouse_hashes",
+        "dependencies",
+        "source_setup",
         "verification_timeout_seconds",
         "vllm_config",
         "submission_files",

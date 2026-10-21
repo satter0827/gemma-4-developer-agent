@@ -60,7 +60,9 @@ def make_validator(config: Any, expected: str) -> Callable[[Path], None]:
     return validate
 
 
-async def evaluate(config: Any) -> Any:
+async def evaluate(
+    config: Any, sources: dict[str, Any] | None = None, dependency_dir: Path | None = None
+) -> Any:
     from swegemma.evaluate import Evaluator
 
     errors: list[str] = []
@@ -73,7 +75,14 @@ async def evaluate(config: Any) -> Any:
     handler = EvaluationErrors(level=logging.ERROR)
     logger.addHandler(handler)
     try:
-        result = await Evaluator(config).run()
+        evaluator = Evaluator(config)
+        if sources is not None:
+            from gemma_agent_dev.sandbox_sources import observe_sources
+
+            check = observe_sources(evaluator.sandbox, sources, config.results_dir, dependency_dir)
+        result = await evaluator.run()
+        if sources is not None:
+            check()
     finally:
         logger.removeHandler(handler)
         handler.close()
@@ -95,12 +104,22 @@ def select_tasks(tasks: list[Any], ids: list[str]) -> list[Any]:
     return selected
 
 
-async def verify_controls(config: Any, tasks: list[Any], output: Path) -> bool:
+async def verify_controls(
+    config: Any,
+    tasks: list[Any],
+    output: Path,
+    sources: dict[str, Any] | None = None,
+    dependency_dir: Path | None = None,
+) -> bool:
     from swegemma.deduplication import resolve_task_snapshot_paths
     from swegemma.evaluate import Evaluator
     from swegemma.harness.verification import verify_task
 
     evaluator = Evaluator(config)
+    if sources is not None:
+        from gemma_agent_dev.sandbox_sources import observe_sources
+
+        check = observe_sources(evaluator.sandbox, sources, output, dependency_dir)
     selected = select_tasks(tasks, config.task_ids)
     records = []
     for task in selected:
@@ -133,6 +152,8 @@ async def verify_controls(config: Any, tasks: list[Any], output: Path) -> bool:
             }
         records.append({"instance_id": task.instance_id, "repo": task.repo, **outcomes})
         write_json(output / "controls.json", records)
+    if sources is not None:
+        check()
     return bool(records) and all(
         not record["unmodified"]["resolved"] and record["reference"]["resolved"]
         for record in records

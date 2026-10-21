@@ -6,12 +6,14 @@ import io
 import json
 import subprocess
 import zipfile
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from gemma_agent_dev.artifacts import file_hash, inventory, write_json
 from gemma_agent_dev.diagnostic_config import DiagnosticSettings
-from gemma_agent_dev.diagnostic_results import diagnostic_evidence
+from gemma_agent_dev.task_catalog import TaskCatalog
+from gemma_agent_dev.test_evidence import diagnostic_evidence
 
 
 def verified_spec(settings: DiagnosticSettings) -> dict[str, Any]:
@@ -77,6 +79,12 @@ def verified_spec(settings: DiagnosticSettings) -> dict[str, Any]:
         "fingerprint": settings.fingerprint(),
         "tasks_sha256": settings.tasks_sha256,
         "snapshots": {t.instance_id: t.snapshot_sha256 for t in settings.tasks},
+        "sources": {
+            t.instance_id: {
+                k: asdict(t)[k] for k in ("source_roots", "import_modules", "dependency_wheels")
+            }
+            for t in settings.tasks
+        },
         "runtime": settings.runtime.as_dict(),
         "timeout_seconds": settings.timeout_seconds,
         "lock_sha256": file_hash(settings.lock_file),
@@ -99,13 +107,23 @@ def prepare(root: Path, destination: Path, config: Path) -> str:
             "config.py",
             "environment.py",
             "diagnostic_kaggle.py",
-            "diagnostic_results.py",
+            "test_evidence.py",
             "official.py",
+            "sandbox_sources.py",
+            "provenance.py",
+            "processes.py",
+            "worker.py",
         ):
             path = root / "src/gemma_agent_dev" / name
             info = zipfile.ZipInfo(path.relative_to(root).as_posix())
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, path.read_bytes())
+        for wheel in TaskCatalog.load(root, settings.catalog_path).wheels(
+            [t.instance_id for t in settings.tasks]
+        ):
+            info = zipfile.ZipInfo("sandbox-wheels/" + wheel.name)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, wheel.read_bytes())
         info = zipfile.ZipInfo("diagnostics.json")
         info.compress_type = zipfile.ZIP_DEFLATED
         archive.writestr(info, json.dumps(spec, sort_keys=True))
@@ -117,7 +135,9 @@ def prepare(root: Path, destination: Path, config: Path) -> str:
     provenance = {"source_sha256": digest, "git_commit": revision}
     script = (root / "kaggle/entry.py").read_text() + (
         "\nif __name__ == '__main__':\n"
-        f"    main({base64.b64encode(payload).decode()!r}, {provenance!r}, diagnostic=True)\n"
+        f"    main({base64.b64encode(payload).decode()!r}, {provenance!r}, "
+        f"diagnostic=True, timeout_seconds={settings.runtime.job_timeout_seconds!r}, "
+        f"progress_interval_seconds={settings.runtime.progress_interval_seconds!r})\n"
     )
     destination.mkdir(parents=True)
     (destination / "run.py").write_text(script)

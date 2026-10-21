@@ -26,6 +26,11 @@ def test_entry_extracts_and_cleans_sources_inside_artifacts(
     monkeypatch.setenv("PYTHONDONTWRITEBYTECODE", "0")
     monkeypatch.setattr(tempfile, "tempdir", tempfile.tempdir)
     monkeypatch.setenv("TMPDIR", str(tmp_path))
+
+    def bounded(root: Path, provenance: dict[str, Any], **kwargs: Any) -> None:
+        run(root, provenance, verify_only=kwargs["verify_only"])
+
+    monkeypatch.setattr("gemma_agent_dev.worker.run_bounded", bounded)
     extracted = []
     module_name = "gemma_agent_dev.diagnostic_kaggle" if diagnostic else "gemma_agent_dev.runtime"
     module = types.ModuleType(module_name)
@@ -47,6 +52,8 @@ def test_entry_extracts_and_cleans_sources_inside_artifacts(
     entry(
         base64.b64encode(payload).decode(),
         {"source_sha256": hashlib.sha256(payload).hexdigest()},
+        timeout_seconds=60,
+        progress_interval_seconds=1,
         verify_only=not diagnostic,
         diagnostic=diagnostic,
     )

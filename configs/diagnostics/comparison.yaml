@@ -1,0 +1,110 @@
+runtime_path: configs/runtime.json
+cache_dir: artifacts/reference/comparison
+environments_dir: artifacts/comparison-envs
+output_dir: artifacts/qualification
+requirements: configs/diagnostics/comparison.in
+lock_file: configs/diagnostics/comparison.lock
+python_version: '3.12'
+kernel_id: satter0927/gemma-4-developer-agent-qualification
+timeout_seconds: 300
+pytest_args:
+- -p
+- pytest_timeout
+- -p
+- pytest_mock
+- -p
+- pytest_httpbin.plugin
+- -q
+tasks:
+- instance_id: fastapi_14786
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: fastapi_14360
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: fastapi_14873
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: fastapi_14458
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: requests_7315
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: requests_7309
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: requests_7328
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: requests_7505
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: requests_7433
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: rich_3052
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: rich_3180
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: rich_3130
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+- instance_id: rich_3278
+  generated_patch: null
+  generated_sha256: null
+  probe_replacements: []
+  probe_expected_pass: false
+  generated_expected_pass: false
+  collection_error_cases: []
+catalog_path: configs/tasks.yaml

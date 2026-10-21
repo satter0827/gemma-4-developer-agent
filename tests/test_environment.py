@@ -44,9 +44,13 @@ def test_official_wheel_installation_is_offline_and_cleans_staging_on_failure(
     monkeypatch.setattr(subprocess, "run", install)
     if fail_install:
         with pytest.raises(subprocess.CalledProcessError):
-            environment.install_wheelhouse(wheels, output, 123)
+            environment.install_wheelhouse(
+                wheels, output, 123, {n: file_hash(wheels / n) for n in names if "cutlass" not in n}
+            )
     else:
-        environment.install_wheelhouse(wheels, output, 123)
+        environment.install_wheelhouse(
+            wheels, output, 123, {n: file_hash(wheels / n) for n in names if "cutlass" not in n}
+        )
     assert len(calls) == 1 and not pth.exists()
     assert not (output / "wheel-links").exists()
     assert os.environ["VLLM_ENGINE_READY_TIMEOUT_S"] == "123"
@@ -57,5 +61,5 @@ def test_empty_wheelhouse_fails_before_installation(
 ) -> None:
     monkeypatch.setattr(os, "environ", dict(os.environ))
     with pytest.raises(FileNotFoundError, match="No official wheels"):
-        environment.install_wheelhouse(tmp_path, tmp_path, 123)
+        environment.install_wheelhouse(tmp_path, tmp_path, 123, {})
     assert not (tmp_path / "wheel-links").exists()

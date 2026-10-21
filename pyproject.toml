@@ -33,7 +33,7 @@ cache_dir = "artifacts/cache/mypy"
 files = ["src", "tests", "kaggle", "scripts"]
 
 [[tool.mypy.overrides]]
-module = ["swegemma.*", "adk_submission.*", "adk_eval_core.*", "google.adk.*", "litellm", "torch"]
+module = ["swegemma.*", "adk_submission.*", "adk_eval_core.*", "google.adk.*", "google.genai.*", "litellm", "torch"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -78,12 +78,12 @@ numeric_parameters = ["timeout", "startup_timeout", "max_bytes", "concurrency", 
 "scripts" = "scripts"
 
 [tool.architecture.modules]
-core = ["gemma_agent_dev", "gemma_agent_dev.artifacts", "gemma_agent_dev.config", "gemma_agent_dev.results", "gemma_agent_dev.candidates", "gemma_agent_dev.packaging", "gemma_agent_dev.diagnostic_results", "gemma_agent_dev.processes"]
-settings = ["gemma_agent_dev.diagnostic_config"]
-connection = ["gemma_agent_dev.official", "gemma_agent_dev.environment"]
-diagnostic = ["gemma_agent_dev.diagnostics"]
+core = ["gemma_agent_dev", "gemma_agent_dev.artifacts", "gemma_agent_dev.config", "gemma_agent_dev.results", "gemma_agent_dev.candidates", "gemma_agent_dev.packaging", "gemma_agent_dev.test_evidence", "gemma_agent_dev.processes", "gemma_agent_dev.provenance", "gemma_agent_dev.analysis", "gemma_agent_dev.gpu_budget"]
+settings = ["gemma_agent_dev.diagnostic_config", "gemma_agent_dev.task_catalog"]
+connection = ["gemma_agent_dev.official", "gemma_agent_dev.environment", "gemma_agent_dev.sandbox_sources", "gemma_agent_dev.official_cpu"]
+diagnostic = ["gemma_agent_dev.diagnostics", "gemma_agent_dev.qualification", "gemma_agent_dev.runtime_checks"]
 local = ["gemma_agent_dev.preflight", "gemma_agent_dev.kaggle_bundle", "gemma_agent_dev.diagnostic_bundle"]
-remote = ["gemma_agent_dev.runtime", "gemma_agent_dev.diagnostic_kaggle"]
+remote = ["gemma_agent_dev.runtime", "gemma_agent_dev.diagnostic_kaggle", "gemma_agent_dev.worker"]
 cli = ["gemma_agent_dev.cli"]
 entry = ["kaggle.entry"]
 quality = ["scripts.check_coverage", "scripts.check_architecture"]

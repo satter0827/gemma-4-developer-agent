@@ -69,8 +69,6 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
     server = None
     start = time.perf_counter()
     failure: BaseException | None = None
-    export = Path(config["paths"]["submission_export"])
-    export_temporary = export.with_suffix(".zip.tmp")
 
     def phase(name: str) -> None:
         manifest["phase"] = name
@@ -78,11 +76,16 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
         print(f"[{run_id}] {name}", flush=True)
 
     try:
-        export.unlink(missing_ok=True)
-        export_temporary.unlink(missing_ok=True)
         install_wheelhouse(
-            Path(config["paths"]["wheelhouse"]), output, config["vllm"]["startup_timeout"]
+            Path(config["paths"]["wheelhouse"]),
+            output,
+            config["vllm"]["startup_timeout"],
+            config["wheelhouse_hashes"],
         )
+        manifest["wheelhouse_hashes"] = config["wheelhouse_hashes"]
+        manifest["dependencies"] = {
+            d.metadata["Name"]: d.version for d in importlib.metadata.distributions()
+        }
         manifest["timings"]["bootstrap_seconds"] = time.perf_counter() - start
         packages = {name: importlib.metadata.version(name) for name in config["packages"]}
         manifest["environment"]["packages"] = packages
@@ -163,10 +166,25 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
         manifest["candidate_sha256"] = file_hash(output / "submission.zip")
         phase("verify_controls")
         controls_start = time.perf_counter()
-        manifest["controls_passed"] = asyncio.run(verify_controls(evaluation, tasks, output))
+        manifest["controls_passed"] = asyncio.run(
+            verify_controls(
+                evaluation, tasks, output, candidate["sources"], root / "sandbox-wheels"
+            )
+        )
         manifest["timings"]["controls_seconds"] = time.perf_counter() - controls_start
         if not manifest["controls_passed"]:
             raise RuntimeError("Reference verification failed; inspect controls.json and logs")
+        manifest["source_setup"] = candidate["sources"]
+        manifest["control_artifacts"] = {
+            p.relative_to(output).as_posix(): file_hash(p)
+            for p in output.rglob("*")
+            if p.is_file()
+            and (
+                p.name == "controls.json"
+                or p.name.startswith("control-")
+                or "source-checks" in p.parts
+            )
+        }
         if not verify_only:
             import litellm
             import torch
@@ -186,7 +204,9 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
             manifest["timings"]["model_startup_seconds"] = time.perf_counter() - model_start
             phase("evaluate")
             evaluation_start = time.perf_counter()
-            result = asyncio.run(evaluate(evaluation))
+            result = asyncio.run(
+                evaluate(evaluation, candidate["sources"], root / "sandbox-wheels")
+            )
             manifest["timings"]["evaluation_seconds"] = time.perf_counter() - evaluation_start
             phase("validate_results")
             manifest["evaluation_artifacts"] = validate_evaluation(output, result)
@@ -214,11 +234,6 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
     manifest["phase"] = manifest["phase"] if failure else "finished"
     try:
         write_json(manifest_path, manifest)
-        if failure is None:
-            shutil.copyfile(output / "submission.zip", export_temporary)
-            if file_hash(export_temporary) != provenance["candidate_sha256"]:
-                raise ValueError("Exported candidate changed")
-            export_temporary.replace(export)
     except BaseException as error:
         failure = failure or error
         manifest.update(status="failed", error=f"{type(failure).__name__}: {failure}")
@@ -227,8 +242,4 @@ def run(root: Path, provenance: dict[str, Any], *, verify_only: bool = False) ->
         except OSError as save_error:
             print(f"Cannot save failure manifest: {save_error}", file=sys.stderr)
     if failure is not None:
-        try:
-            export_temporary.unlink(missing_ok=True)
-        except OSError as cleanup_error:
-            print(f"Cannot remove failed export: {cleanup_error}", file=sys.stderr)
         raise failure

@@ -43,7 +43,6 @@ class RuntimePaths:
     model: str
     wheelhouse: str
     output: str
-    submission_export: str
 
 
 @dataclass(frozen=True)
@@ -91,6 +90,9 @@ class RuntimeSettings:
     task_ids: list[str]
     paths: RuntimePaths
     packages: dict[str, str]
+    wheelhouse_hashes: dict[str, str]
+    job_timeout_seconds: int
+    progress_interval_seconds: int
     verification_timeout_seconds: int
     concurrency: int
     vllm: InferenceSettings
@@ -129,6 +131,29 @@ class RuntimeSettings:
         ):
             raise ValueError("Expected pinned official package versions")
         positive(value["concurrency"], "concurrency", integer=True)
+        positive(value["job_timeout_seconds"], "job timeout", integer=True)
+        positive(value["progress_interval_seconds"], "progress interval", integer=True)
+        if value["progress_interval_seconds"] >= value["job_timeout_seconds"]:
+            raise ValueError("Progress interval must be below the job deadline")
+        hashes = value["wheelhouse_hashes"]
+        if (
+            not isinstance(hashes, dict)
+            or not hashes
+            or any(
+                not isinstance(k, str)
+                or Path(k).name != k
+                or not k.endswith(".whl")
+                or not isinstance(v, str)
+                or not re.fullmatch(r"[a-f0-9]{64}", v)
+                for k, v in hashes.items()
+            )
+        ):
+            raise ValueError("Expected official wheel hashes")
+        if any(
+            f"{name.replace('-', '_')}-{version}-py3-none-any.whl" not in hashes
+            for name, version in packages.items()
+        ):
+            raise ValueError("Official packages are missing expected wheel hashes")
         positive(value["verification_timeout_seconds"], "verification timeout", integer=True)
         nested: dict[str, Any] = {}
         for name, kind in (
@@ -158,7 +183,7 @@ class RuntimeSettings:
             or any(not re.fullmatch(r"[\w.-]+", part) for part in source)
             or not source[-1].isdigit()
             or int(source[-1]) < 1
-            or tuple(Path(paths.model).parts[-5:])
+            or tuple(Path(paths.model).parts[-MODEL_SOURCE_PARTS:])
             != (source[0], source[1], source[2].lower(), source[3], source[4])
         ):
             raise ValueError("Model source and mounted model path disagree")
@@ -200,3 +225,44 @@ class EvaluationSettings:
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class SamplingSettings:
+    temperature: float
+    top_p: float
+    max_output_tokens: int
+    seed: int
+    thinking_config: dict[str, Any]
+
+    @classmethod
+    def load(cls, path: Path, runtime: RuntimeSettings) -> "SamplingSettings":
+        data = mapping(yaml.safe_load(path.read_text()), {f.name for f in fields(cls)}, "sampling")
+        positive(data["top_p"], "top_p")
+        temperature = data["temperature"]
+        if (
+            type(temperature) not in (int, float)
+            or not math.isfinite(temperature)
+            or temperature < 0
+        ):
+            raise ValueError("Invalid temperature")
+        if data["top_p"] > 1:
+            raise ValueError("top_p must not exceed one")
+        positive(data["max_output_tokens"], "max output tokens", integer=True)
+        if type(data["seed"]) is not int or data["seed"] < 0:
+            raise ValueError("Seed must be a nonnegative integer")
+        thinking = mapping(
+            data["thinking_config"], {"thinking_budget", "include_thoughts"}, "thinking"
+        )
+        if (
+            type(thinking["thinking_budget"]) is not int
+            or thinking["thinking_budget"] < 0
+            or type(thinking["include_thoughts"]) is not bool
+        ):
+            raise ValueError("Invalid thinking configuration")
+        if thinking["thinking_budget"] > data["max_output_tokens"] or (
+            runtime.compaction.token_threshold + data["max_output_tokens"]
+            >= runtime.vllm.max_model_len
+        ):
+            raise ValueError("Generation and compaction budgets exceed the context window")
+        return cls(**data)

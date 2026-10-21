@@ -1,5 +1,5 @@
 agent_dir: agent
-evaluation_config: agent/eval_config.yaml
+profiles: configs/profiles.yaml
 runtime_config: configs/runtime.json
 diagnostic_config: configs/diagnostics/fastapi.yaml
 adapter_archive: artifacts/results/policy-20261020-30tools-gpu/artifacts/results/20261020T072100Z-e679cea7/submission.zip

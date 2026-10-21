@@ -23,7 +23,6 @@ from gemma_agent_dev.config import RuntimeSettings
 from gemma_agent_dev.diagnostic_bundle import prepare as prepare_kaggle
 from gemma_agent_dev.diagnostic_config import DiagnosticSettings
 from gemma_agent_dev.diagnostic_kaggle import verify_cases
-from gemma_agent_dev.diagnostic_results import junit_counts, validate_test_evidence
 from gemma_agent_dev.diagnostics import (
     check_prepared,
     command,
@@ -32,6 +31,7 @@ from gemma_agent_dev.diagnostics import (
     installed_environment,
     run_case,
 )
+from gemma_agent_dev.test_evidence import junit_counts, validate_test_evidence
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -121,6 +121,9 @@ def test_reference_failure_stops_remaining_cases(diagnostic_project: DiagnosticS
     task_file = json.loads(settings.tasks_file.read_text())
     task_file["patch"] = task_file["patch"].replace("value = 1", "value = 2")
     settings.tasks_file.write_text(json.dumps(task_file) + "\n")
+    catalog = yaml.safe_load(settings.catalog_path.read_text())
+    catalog["tasks_sha256"] = file_hash(settings.tasks_file)
+    settings.catalog_path.write_text(yaml.safe_dump(catalog))
     settings = replace(settings, tasks_sha256=file_hash(settings.tasks_file))
     receipt = json.loads((settings.cache_dir / "prepared.json").read_text())
     receipt["fingerprint"] = settings.fingerprint()
@@ -392,9 +395,9 @@ def test_preparation_downloads_once_and_rejects_cached_source_or_snapshot_change
     archive = settings.root / "snapshot.tgz"
     with tarfile.open(archive, "w:gz") as tar:
         tar.add(repo, arcname=".")
-    config = yaml.safe_load(settings.config_path.read_text())
+    config = yaml.safe_load(settings.catalog_path.read_text())
     config["tasks"][0]["snapshot_sha256"] = file_hash(archive)
-    settings.config_path.write_text(yaml.safe_dump(config))
+    settings.catalog_path.write_text(yaml.safe_dump(config))
     settings = DiagnosticSettings.load(settings.root, settings.config_path)
     shutil.rmtree(source)
     shutil.rmtree(settings.environments_dir)
@@ -574,6 +577,9 @@ def test_official_diagnostics_validate_evidence_and_stop_on_reference_failure(
             for name, patch in patches.items()
         ],
     }
+    spec["dependency_dir"] = str(settings.root)
+    spec["sources"] = {"fixture_1": {"source_roots": ["."], "import_modules": ["calc"]}}
+    monkeypatch.setattr("gemma_agent_dev.sandbox_sources.observe_sources", lambda *a: lambda: None)
     calls: list[str] = []
     current_xml = ""
 
@@ -670,7 +676,7 @@ def test_collection_failure_is_not_a_normal_test_result(tmp_path: Path, exit_cod
 
 
 def test_only_explicit_collection_diagnostics_allow_zero_executed_tests(tmp_path: Path) -> None:
-    from gemma_agent_dev.diagnostic_results import diagnostic_evidence
+    from gemma_agent_dev.test_evidence import diagnostic_evidence
 
     path = tmp_path / "junit.xml"
     path.write_text(

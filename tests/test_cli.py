@@ -120,7 +120,14 @@ def test_prepare_uses_artifacts_and_prevents_overwrite(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.chdir(preflight_project)
-    args = ["prepare-kaggle", "--name", "baseline-01", "--preflight-report", str(preflight_report)]
+    args = [
+        "prepare-kaggle",
+        "--name",
+        "baseline-01",
+        "--preflight-report",
+        str(preflight_report),
+        "--verify-only",
+    ]
     assert main(args) == 0
     assert (preflight_project / "artifacts/kaggle/baseline-01/source-manifest.json").is_file()
     assert main(args) == 1

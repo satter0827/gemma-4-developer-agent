@@ -37,6 +37,10 @@ def make_run(tmp_path: Path) -> Callable[..., Path]:
             "evaluation": {"max_time_minutes": 1},
             "environment": {"sandbox": "subprocess"},
             "tasks_sha256": "fixture",
+            "snapshots": {i: "fixture" for i in ids},
+            "wheelhouse_hashes": {"fixture.whl": "fixture"},
+            "dependencies": {"fixture": "1"},
+            "source_setup": {"fixture": "source"},
             "verification_timeout_seconds": 300,
             "vllm_config": {"max_model_len": 32768},
             "submission_files": {"agent.yaml": "fixture", "prompts/system.md": "fixture"},
@@ -115,7 +119,7 @@ def diagnostic_project(tmp_path: Path) -> DiagnosticSettings:
     (task_env / "python").chmod(0o755)
     (root / "requirements.in").write_text("pytest\n")
     (root / "requirements.lock").write_text("fixture lock\n")
-    data = {
+    data: dict[str, Any] = {
         "runtime_path": "runtime.json",
         "tasks_file": "tasks.jsonl",
         "tasks_sha256": file_hash(root / "tasks.jsonl"),
@@ -142,6 +146,23 @@ def diagnostic_project(tmp_path: Path) -> DiagnosticSettings:
             }
         ],
     }
+    catalog = {
+        "wheel_cache": "artifacts/reference/task-wheels",
+        "tasks_file": data.pop("tasks_file"),
+        "tasks_sha256": data.pop("tasks_sha256"),
+        "tasks": [
+            {
+                "instance_id": "fixture_1",
+                "test_paths": data["tasks"][0].pop("test_paths"),
+                "snapshot_sha256": data["tasks"][0].pop("snapshot_sha256"),
+                "source_roots": ["."],
+                "import_modules": ["calc"],
+                "dependency_wheels": {},
+            }
+        ],
+    }
+    (root / "catalog.yaml").write_text(yaml.safe_dump(catalog))
+    data["catalog_path"] = "catalog.yaml"
     (root / "diagnostics.yaml").write_text(yaml.safe_dump(data))
     settings = DiagnosticSettings.load(root, Path("diagnostics.yaml"))
     write_json(
@@ -174,7 +195,7 @@ def preflight_project(diagnostic_project: DiagnosticSettings) -> Path:
         yaml.safe_dump(
             {
                 "agent_dir": "agent",
-                "evaluation_config": "agent/eval_config.yaml",
+                "profiles": "configs/profiles.yaml",
                 "runtime_config": "runtime.json",
                 "diagnostic_config": "diagnostics.yaml",
                 "adapter_archive": "adapters.zip",
@@ -200,4 +221,58 @@ def preflight_report(preflight_project: Path, monkeypatch: pytest.MonkeyPatch) -
         yield SimpleNamespace(args=args, wait=lambda **_: 0)
 
     monkeypatch.setattr(preflight, "process_group", quality)
-    return preflight.run(preflight_project, Path("preflight.yaml"))
+    return preflight.run(preflight_project, Path("preflight.yaml"), "smoke")
+
+
+@pytest.fixture
+def cpu_evidence(preflight_project: Path, preflight_report: Path) -> Path:
+    from gemma_agent_dev.config import RuntimeSettings
+    from gemma_agent_dev.kaggle_bundle import prepare
+
+    folder = preflight_project / "artifacts/cpu"
+    folder.mkdir(parents=True)
+    digest = prepare(
+        preflight_project,
+        preflight_project / "cpu-source",
+        report_path=preflight_report,
+        verify_only=True,
+    )
+    config = RuntimeSettings.load(preflight_project / "runtime.json")
+    write_json(folder / "origins.json", {"valid": True})
+    write_json(
+        folder / "controls.json",
+        [
+            {
+                "instance_id": task,
+                "repo": "fixture/repo",
+                **{
+                    label: {
+                        "resolved": label == "reference",
+                        "exit_code": 0 if label == "reference" else 1,
+                        "error": None,
+                        "duration_seconds": 1,
+                    }
+                    for label in ("unmodified", "reference")
+                },
+            }
+            for task in config.task_ids
+        ],
+    )
+    write_json(
+        folder / "manifest.json",
+        {
+            "schema_version": 1,
+            "kind": "verification",
+            "run_id": "cpu",
+            "status": "completed",
+            "task_ids": config.task_ids,
+            "controls_passed": True,
+            "source_sha256": digest,
+            "candidate_sha256": json.loads(preflight_report.read_text())["candidate_sha256"],
+            "wheelhouse_hashes": config.wheelhouse_hashes,
+            "control_artifacts": {
+                name: file_hash(folder / name) for name in ("origins.json", "controls.json")
+            },
+        },
+    )
+    return folder / "manifest.json"

@@ -28,11 +28,12 @@ def test_cpu_gpu_share_frozen_candidate_and_isolated_runtime_imports(
     preflight_project: Path,
     preflight_report: Path,
     tmp_path: Path,
+    cpu_evidence: Path,
 ) -> None:
     root = preflight_project
     cpu, gpu = tmp_path / "cpu", tmp_path / "gpu"
     assert prepare(root, cpu, report_path=preflight_report, verify_only=True) == prepare(
-        root, gpu, report_path=preflight_report
+        root, gpu, report_path=preflight_report, cpu_report=cpu_evidence
     )
     files = source_files(cpu)
     assert files == source_files(gpu)
