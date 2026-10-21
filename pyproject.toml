@@ -34,7 +34,7 @@ cache_dir = "artifacts/cache/mypy"
 files = ["src", "tests", "scripts"]
 
 [[tool.mypy.overrides]]
-module = ["swegemma.*", "adk_submission.*", "adk_eval_core.*", "google.adk.*", "google.genai.*", "litellm", "torch"]
+module = ["swegemma.*", "adk_submission.*", "adk_eval_core.*", "google.adk.*", "google.genai.*", "litellm", "torch", "mlflow.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -79,6 +79,8 @@ numeric_parameters = ["timeout", "startup_timeout", "max_bytes", "concurrency", 
 
 [tool.architecture.modules]
 core = [
+  "gemma_agent_dev.evaluation.session_policy",
+  "gemma_agent_dev.evaluation.control_evidence",
   "gemma_agent_dev",
   "gemma_agent_dev.common",
   "gemma_agent_dev.common.archives",
@@ -103,11 +105,15 @@ core = [
   "gemma_agent_dev.evaluation.budget",
 ]
 settings = [
+  "gemma_agent_dev.tasks.pools",
+  "gemma_agent_dev.evaluation.experiments",
   "gemma_agent_dev.diagnostics.config",
   "gemma_agent_dev.tasks.catalog",
   "gemma_agent_dev.submission.config",
 ]
 connection = [
+  "gemma_agent_dev.evaluation.tracking_worker",
+  "gemma_agent_dev.evaluation.sequential_checks",
   "gemma_agent_dev.evaluation.official",
   "gemma_agent_dev.notebooks.environment",
   "gemma_agent_dev.diagnostics.sandbox",
@@ -121,6 +127,10 @@ diagnostic = [
   "gemma_agent_dev.evaluation.sdk_checks",
 ]
 local = [
+  "gemma_agent_dev.evaluation.experiment_preparation",
+  "gemma_agent_dev.evaluation.experiment_results",
+  "gemma_agent_dev.evaluation.tracking",
+  "gemma_agent_dev.notebooks.experiments",
   "gemma_agent_dev.candidates.preflight",
   "gemma_agent_dev.notebooks.evaluation",
   "gemma_agent_dev.notebooks.bundle",
@@ -134,11 +144,14 @@ operations = [
   "gemma_agent_dev.submission.state",
 ]
 remote = [
+  "gemma_agent_dev.evaluation.session",
+  "gemma_agent_dev.evaluation.session_worker",
   "gemma_agent_dev.evaluation.runtime",
   "gemma_agent_dev.diagnostics.remote",
   "gemma_agent_dev.notebooks.worker",
 ]
 cli = [
+  "gemma_agent_dev.evaluation.experiments_cli",
   "gemma_agent_dev.cli",
   "gemma_agent_dev.notebooks.cli",
   "gemma_agent_dev.candidates.cli",

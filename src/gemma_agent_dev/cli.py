@@ -8,6 +8,7 @@ from gemma_agent_dev.candidates import cli as candidates
 from gemma_agent_dev.common.paths import project_root
 from gemma_agent_dev.diagnostics import cli as diagnostics
 from gemma_agent_dev.evaluation import cli as evaluation
+from gemma_agent_dev.evaluation import experiments_cli as experiments
 from gemma_agent_dev.notebooks import cli as notebooks
 from gemma_agent_dev.submission import cli as submission
 from gemma_agent_dev.tasks import cli as tasks
@@ -19,6 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     tasks.configure(commands)
     diagnostics.configure(commands)
     evaluation.configure(commands)
+    experiments.configure(commands)
     candidates.configure(commands)
     notebooks.configure(commands)
     submission.configure(commands)

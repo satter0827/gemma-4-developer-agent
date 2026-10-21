@@ -1,0 +1,5 @@
+agent_class: SequentialAgent
+name: repair_and_verify
+sub_agents:
+  - config_path: sub_agents/repair-v1.yaml
+  - config_path: sub_agents/verify-v1.yaml

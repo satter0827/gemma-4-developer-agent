@@ -12,7 +12,11 @@ from typing import Any
 
 import yaml
 
-from gemma_agent_dev.candidates.archive import extract_archive, validate_references
+from gemma_agent_dev.candidates.archive import (
+    extract_archive,
+    referenced_files,
+    validate_references,
+)
 from gemma_agent_dev.candidates.packaging import package_submission
 from gemma_agent_dev.common.artifacts import (
     file_hash,
@@ -40,7 +44,7 @@ class PreflightSettings:
     profile: str
     purpose: str
     evaluation_config: Path
-    instruction: Path
+    agent_config: Path
     task_selection: Path | None
     runtime_config: Path
     diagnostic_config: Path
@@ -63,7 +67,7 @@ class PreflightSettings:
                 "profile",
                 "purpose",
                 "evaluation_config",
-                "instruction",
+                "agent_config",
                 "task_selection",
             },
             "preflight",
@@ -102,12 +106,12 @@ class PreflightSettings:
             raise ValueError("Unknown execution profile")
         selected = mapping(
             profiles[profile],
-            {"purpose", "evaluation_config", "instruction", "task_selection"},
+            {"purpose", "evaluation_config", "agent_config", "task_selection"},
             "profile",
         )
         if selected["purpose"] not in {"smoke", "comparison"}:
             raise ValueError("Invalid profile purpose")
-        for key in ("evaluation_config", "instruction"):
+        for key in ("evaluation_config", "agent_config"):
             selected[key] = project_path(root, selected[key])
             if not selected[key].is_file():
                 raise ValueError(f"Missing profile input: {key}")
@@ -116,6 +120,9 @@ class PreflightSettings:
         if (selected["purpose"] == "comparison") != (selected["task_selection"] is not None):
             raise ValueError("Comparison profiles require qualified tasks")
         data.update(selected)
+        if data["agent_config"].parent != data["agent_dir"]:
+            raise ValueError("Agent root must be directly inside agent_dir")
+        referenced_files(data["agent_dir"], data["agent_config"])
         EvaluationSettings.load(data["evaluation_config"])
         runtime = RuntimeSettings.load(data["runtime_config"])
         diagnostics = DiagnosticSettings.load(root, data["diagnostic_config"])
@@ -129,8 +136,11 @@ class PreflightSettings:
         return cls(root=root, config_path=path, profile=profile, **data)
 
     def inputs(self) -> dict[str, str]:
-        paths = [self.adapter_archive, self.evaluation_config, self.instruction]
-        for directory in ("src", "scripts", "tests", "agent"):
+        paths = [self.adapter_archive, self.evaluation_config]
+        paths.extend(
+            self.agent_dir / name for name in referenced_files(self.agent_dir, self.agent_config)
+        )
+        for directory in ("src", "scripts", "tests"):
             paths.extend(
                 p
                 for p in (self.root / directory).rglob("*")
@@ -199,16 +209,7 @@ def run(root: Path, config: Path, profile: str) -> Path:
     report_path = output / "report.json"
     write_json(report_path, report)
     try:
-        with (output / "quality.log").open("w") as log:
-            with process_group(
-                ["make", "verify"],
-                cwd=settings.root,
-                env={**os.environ, "UV_OFFLINE": "1"},
-                stdout=log,
-            ) as process:
-                code = process.wait(timeout=settings.quality_timeout_seconds)
-                if code:
-                    raise subprocess.CalledProcessError(code, process.args)
+        verify_quality(settings, output)
         diagnostics = DiagnosticSettings.load(settings.root, settings.diagnostic_config)
         diagnostic_report = diagnose(diagnostics) / "report.json"
         spec = verified_spec(diagnostics)
@@ -217,24 +218,7 @@ def run(root: Path, config: Path, profile: str) -> Path:
             "sha256": file_hash(diagnostic_report),
             "fingerprint": spec["fingerprint"],
         }
-        with tempfile.TemporaryDirectory(dir=output) as temporary:
-            staging = Path(temporary)
-            extracted = staging / "archive"
-            extract_archive(settings.adapter_archive, extracted, settings.max_unpacked_bytes)
-            submission = staging / "candidate"
-            inventory(settings.agent_dir)
-            shutil.copytree(settings.agent_dir, submission)
-            # Only adapters are reused; no historical agent settings enter the candidate.
-            shutil.copytree(extracted / "adapters", submission / "adapters")
-            shutil.copyfile(settings.evaluation_config, submission / "eval_config.yaml")
-            # Change only the main instruction; shared agents and sampling stay fixed.
-            shutil.copyfile(settings.instruction, submission / "prompts/system.md")
-            report["files"] = package_submission(
-                submission,
-                output / "submission.zip",
-                validate_references,
-                validation_scope="structural",
-            )
+        report["files"] = freeze_candidate(settings, output)
         if before != settings.inputs():
             raise ValueError("Preflight inputs changed during validation")
         report.update(status="completed", candidate_sha256=file_hash(output / "submission.zip"))
@@ -246,6 +230,43 @@ def run(root: Path, config: Path, profile: str) -> Path:
         write_json(report_path, report)
         raise
     return report_path
+
+
+def verify_quality(settings: PreflightSettings, output: Path) -> None:
+    with (output / "quality.log").open("w") as log:
+        with process_group(
+            ["make", "verify"],
+            cwd=settings.root,
+            env={**os.environ, "UV_OFFLINE": "1"},
+            stdout=log,
+        ) as process:
+            code = process.wait(timeout=settings.quality_timeout_seconds)
+            if code:
+                raise subprocess.CalledProcessError(code, process.args)
+
+
+def freeze_candidate(settings: PreflightSettings, output: Path) -> dict[str, str]:
+    with tempfile.TemporaryDirectory(dir=output) as temporary:
+        staging = Path(temporary)
+        extracted = staging / "archive"
+        extract_archive(settings.adapter_archive, extracted, settings.max_unpacked_bytes)
+        submission = staging / "candidate"
+        submission.mkdir()
+        for name in referenced_files(settings.agent_dir, settings.agent_config):
+            target = submission / (
+                "agent.yaml" if settings.agent_dir / name == settings.agent_config else name
+            )
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(settings.agent_dir / name, target)
+        # Only adapters are reused; no historical agent settings enter the candidate.
+        shutil.copytree(extracted / "adapters", submission / "adapters")
+        shutil.copyfile(settings.evaluation_config, submission / "eval_config.yaml")
+        return package_submission(
+            submission,
+            output / "submission.zip",
+            validate_references,
+            validation_scope="structural",
+        )
 
 
 def load_report(root: Path, path: Path) -> tuple[PreflightSettings, dict[str, Any]]:

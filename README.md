@@ -1,6 +1,6 @@
 # Gemma 4 Developer Agent
 
-KaggleのGemma 4 Developer Agent Competition向けの提出エージェントと開発用CLIです。保存パッチの診断、固定課題の評価、候補の検証、期限付きの提出管理を分けて行います。
+KaggleのGemma 4 Developer Agent Competition向けの提出エージェントと開発用CLIです。保存パッチの診断、固定課題とEasy課題群の比較、候補の検証、期限付きの提出管理を分けて行います。
 
 | 場所 | 内容 |
 |---|---|
@@ -10,7 +10,7 @@ KaggleのGemma 4 Developer Agent Competition向けの提出エージェントと
 | `docs/` | 分析、設計、操作、参照、実験記録 |
 | `artifacts/` | Git管理外の入力、環境、ZIP、実行結果 |
 
-[文書案内](docs/README.md)から、[競技と採点](docs/analysis/competition.md)、[評価実績](docs/analysis/tasks-and-results.md)、[構造](docs/design/architecture.md)、[提出手順](docs/operations/submission.md)を確認できます。過去の条件と操作は[記録](docs/records/README.md)へ保持しています。
+[文書案内](docs/README.md)から、[競技と採点](docs/analysis/competition.md)、[評価実績](docs/analysis/tasks-and-results.md)、[構造](docs/design/architecture.md)、[提出手順](docs/operations/submission.md)を確認できます。Easy課題の改善とMLflowによる記録管理は[実験手順](docs/operations/experiments.md)を参照してください。過去の条件と操作は[記録](docs/records/README.md)へ保持しています。
 
 ## 最初の準備
 

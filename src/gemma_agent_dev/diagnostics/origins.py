@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+HOST_DISPLAY_VARIABLES = ("NO_COLOR", "FORCE_COLOR", "CLICOLOR", "CLICOLOR_FORCE")
 PLUGIN_NAME = "gemma_source_guard"
 IMPORT_ERRORS: dict[str, str] = {}
 

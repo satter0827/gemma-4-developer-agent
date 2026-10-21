@@ -111,9 +111,9 @@ def test_preflight_binds_only_relevant_settings(preflight_project: Path, kind: s
         path = root / "configs/evaluation/profiles.yaml"
         profiles = yaml.safe_load(path.read_text())
         if kind == "unselected":
-            profiles["workflow"]["instruction"] = "not-selected.md"
+            profiles["workflow"]["agent_config"] = "not-selected.yaml"
         else:
-            profiles["smoke"]["instruction"] = "agent/prompts/workflow.md"
+            profiles["smoke"]["agent_config"] = "agent/workflow-v1.yaml"
         path.write_text(yaml.safe_dump(profiles))
     elif kind == "inference":
         path = root / "runtime.json"

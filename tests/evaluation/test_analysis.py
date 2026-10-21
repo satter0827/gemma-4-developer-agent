@@ -260,3 +260,47 @@ def test_analysis_compares_actual_sdk_task_order_not_only_selected_ids(
         and report["comparison"]["task_order_verified"] is False
     )
     assert "actual_task_order" in report["comparison"]["differences"]
+
+
+def test_scratch_files_and_argument_failures_are_not_source_repairs(make_run: Any) -> None:
+    path = make_run()
+    (path / "traces").mkdir()
+    write_json(
+        path / "traces/trace_task_a.json",
+        {
+            "steps": [
+                {
+                    "extra": {"author": "repair_agent"},
+                    "tool_calls": [
+                        {
+                            "function_name": "write_file",
+                            "arguments": {"file_path": "reproduce_bug.py"},
+                        }
+                    ],
+                    "observation": {"content": '{"error":"missing required content argument"}'},
+                },
+                {
+                    "tool_calls": [
+                        {"function_name": "edit_file", "arguments": {"path": "rich/prompt.py"}}
+                    ],
+                    "observation": {"content": '{"status":"ok"}'},
+                },
+                {
+                    "extra": {"author": "verify_agent"},
+                    "tool_calls": [
+                        {
+                            "function_name": "run_command",
+                            "arguments": {"command": "python repro.py"},
+                        }
+                    ],
+                    "observation": {"content": '{"exit_code":0}'},
+                },
+            ]
+        },
+    )
+    evidence = analysis.task_evidence(load_run(path), "task_a", 10000)
+    assert evidence["first_edit_attempt_trace_call"] == 1
+    assert evidence["first_implementation_edit_trace_call"] == 2
+    assert evidence["scratch_edit_attempts"] == [1] and len(evidence["tool_argument_errors"]) == 1
+    assert evidence["stage_authors"] == ["repair_agent", "verify_agent"]
+    assert len(evidence["edit_failures"]) == 1 and len(evidence["verification_commands"]) == 1

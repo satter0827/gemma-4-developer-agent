@@ -142,11 +142,14 @@ def test_inherited_pytest_options_cannot_change_diagnostics(
 ) -> None:
     monkeypatch.setenv("PYTEST_ADDOPTS", "--ignore=tests")
     monkeypatch.setenv("PYTEST_PLUGINS", "external_plugin")
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.setenv("FORCE_COLOR", "1")
     monkeypatch.setenv("PYTHONPATH", "/unrelated/project")
     env = environment(diagnostic_project)
     assert "PYTEST_ADDOPTS" not in env and "PYTEST_PLUGINS" not in env
     assert env["PYTHONNOUSERSITE"] == "1"
     assert "PYTHONPATH" not in env
+    assert "NO_COLOR" not in env and "FORCE_COLOR" not in env
 
 
 @pytest.mark.parametrize(
@@ -397,6 +400,10 @@ def test_preparation_downloads_once_and_rejects_cached_source_or_snapshot_change
         tar.add(repo, arcname=".")
     config = yaml.safe_load(settings.catalog_path.read_text())
     config["tasks"][0]["snapshot_sha256"] = file_hash(archive)
+    wheel = settings.root / "artifacts/reference/task-wheels/fixture-1-py3-none-any.whl"
+    wheel.parent.mkdir(parents=True, exist_ok=True)
+    wheel.write_bytes(b"pinned-task-dependency")
+    config["tasks"][0]["dependency_wheels"] = {wheel.name: file_hash(wheel)}
     settings.catalog_path.write_text(yaml.safe_dump(config))
     settings = DiagnosticSettings.load(settings.root, settings.config_path)
     shutil.rmtree(source)
@@ -423,6 +430,10 @@ def test_preparation_downloads_once_and_rejects_cached_source_or_snapshot_change
             calls.append(args)
             assert "--require-hashes" in args and args[-1] == str(settings.lock_file)
             return ""
+        if args[:3] == ["uv", "pip", "install"]:
+            calls.append(args)
+            assert "--no-index" in args and "--no-deps" in args and args[-1] == str(wheel)
+            return ""
         return real_command(args, **kwargs)
 
     monkeypatch.setattr(diagnostics, "command", command)
@@ -437,6 +448,7 @@ def test_preparation_downloads_once_and_rejects_cached_source_or_snapshot_change
     diagnostics.prepare(settings)
     assert sum(args[0] == "kaggle" for args in calls) == 1
     assert sum(args[:2] == ["uv", "venv"] for args in calls) == 1
+    assert sum(args[:3] == ["uv", "pip", "install"] for args in calls) == 3
     (source / "calc.py").write_text("changed")
     with pytest.raises(ValueError, match="Cached source changed"):
         diagnostics.prepare(settings)

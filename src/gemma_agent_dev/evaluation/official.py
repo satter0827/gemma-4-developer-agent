@@ -115,14 +115,19 @@ async def verify_controls(
     from swegemma.evaluate import Evaluator
     from swegemma.harness.verification import verify_task
 
-    evaluator = Evaluator(config)
-    if sources is not None:
-        from gemma_agent_dev.diagnostics.sandbox import observe_sources
-
-        check = observe_sources(evaluator.sandbox, sources, output, dependency_dir)
     selected = select_tasks(tasks, config.task_ids)
     records = []
     for task in selected:
+        evaluator = Evaluator(config)
+        if sources is not None:
+            from gemma_agent_dev.diagnostics.sandbox import observe_sources
+
+            check = observe_sources(
+                evaluator.sandbox,
+                {task.instance_id: sources[task.instance_id]},
+                output,
+                dependency_dir,
+            )
         snapshot, base, patch = resolve_task_snapshot_paths(
             config.snapshots_dir,
             task.instance_id,
@@ -152,9 +157,28 @@ async def verify_controls(
             }
         records.append({"instance_id": task.instance_id, "repo": task.repo, **outcomes})
         write_json(output / "controls.json", records)
-    if sources is not None:
-        check()
+        if sources is not None:
+            check()
     return bool(records) and all(
         not record["unmodified"]["resolved"] and record["reference"]["resolved"]
         for record in records
     )
+
+
+def generation_contract(directory: Path) -> list[dict[str, Any]]:
+    """Read every selected LLM node through the pinned SDK's include resolver."""
+    import json
+
+    from adk_submission.yaml_loader import load_yaml
+
+    contracts = {}
+    for path in directory.rglob("*.yaml"):
+        data = load_yaml(path, directory)
+        if isinstance(data, dict) and "model" in data:
+            value = {"model": data["model"], "generation": data.get("generate_content_config")}
+            if value["generation"] is None:
+                raise ValueError("Every experiment agent must declare sampling explicitly")
+            contracts[json.dumps(value, sort_keys=True)] = value
+    if not contracts:
+        raise ValueError("Experiment has no declared LLM agents")
+    return [contracts[key] for key in sorted(contracts)]

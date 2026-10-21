@@ -14,6 +14,7 @@ import yaml
 from gemma_agent_dev.common.artifacts import file_hash, inventory, write_json
 from gemma_agent_dev.diagnostics.config import DiagnosticSettings
 from gemma_agent_dev.diagnostics.local import installed_environment
+from gemma_agent_dev.evaluation import experiment_preparation
 from gemma_agent_dev.evaluation.config import RuntimeSettings
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -277,3 +278,41 @@ def cpu_evidence(preflight_project: Path, preflight_report: Path) -> Path:
         },
     )
     return folder / "manifest.json"
+
+
+@pytest.fixture
+def experiment_project(preflight_project: Path) -> Path:
+    root = preflight_project
+    pool = {
+        "pool_id": "fixture-pool",
+        "difficulty": "Easy",
+        "tasks_sha256": file_hash(root / "tasks.jsonl"),
+        "sdk_version": "0.2.11",
+        "tuning": ["fixture_1"],
+        "confirmation": ["unused_1"],
+        "uses": [
+            {"experiment_id": "fixture-experiment", "purpose": "tuning", "task_ids": ["fixture_1"]}
+        ],
+    }
+    (root / "pool.yaml").write_text(yaml.safe_dump(pool))
+    config = yaml.safe_load((root / "configs/evaluation/easy-sequential-v1.yaml").read_text())
+    config.update(
+        experiment_id="fixture-experiment",
+        hypothesis="fixture-hypothesis",
+        pool="pool.yaml",
+        diagnostic_config="diagnostics.yaml",
+        preflight_config="preflight.yaml",
+        runtime_config="runtime.json",
+        evaluation_config="agent/eval_config.yaml",
+    )
+    (root / "experiment.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
+    return root
+
+
+@pytest.fixture
+def frozen_experiment(experiment_project: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    def quality(settings: Any, output: Path) -> None:
+        (output / "quality.log").write_text("fixture quality")
+
+    monkeypatch.setattr(experiment_preparation, "verify_quality", quality)
+    return experiment_preparation.prepare(experiment_project, Path("experiment.yaml"))

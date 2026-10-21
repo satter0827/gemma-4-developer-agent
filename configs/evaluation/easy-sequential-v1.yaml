@@ -1,0 +1,19 @@
+experiment_id: easy-sequential-v1
+hypothesis: independent-public-api-verification
+pool: configs/tasks/easy.yaml
+diagnostic_config: configs/diagnostics/easy.yaml
+preflight_config: configs/evaluation/preflight.yaml
+runtime_config: configs/evaluation/runtime.yaml
+evaluation_config: configs/evaluation/comparison.yaml
+variants:
+  workflow-v1: agent/workflow-v1.yaml
+  sequential-v1: agent/sequential-v1.yaml
+session:
+  job_timeout_seconds: 5400
+  cleanup_reserve_seconds: 300
+  per_evaluation_overhead_seconds: 60
+  enable_prefix_caching: false
+  quota_hours: 4
+  reserve_hours: 1
+  quota_per_wall_hour: 2
+  max_runs: 3

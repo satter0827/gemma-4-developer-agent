@@ -22,6 +22,15 @@ EVALUATION_MODULES = (
     "evaluation.results",
     "evaluation.runtime",
 )
+EXPERIMENT_MODULES = (
+    *EVALUATION_MODULES,
+    "evaluation.budget",
+    "evaluation.session_policy",
+    "evaluation.control_evidence",
+    "evaluation.session",
+    "evaluation.session_worker",
+    "evaluation.sequential_checks",
+)
 DIAGNOSTIC_MODULES = (*BASE_MODULES, "diagnostics.remote")
 LOCAL_DIAGNOSTIC_MODULES = (
     "common.sources",
