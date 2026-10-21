@@ -11,7 +11,7 @@ from gemma_agent_dev.artifacts import write_json
 from gemma_agent_dev.config import project_path
 from gemma_agent_dev.submission import execute_run, resolve_attempt, synchronize
 from gemma_agent_dev.submission_api import KaggleGateway
-from gemma_agent_dev.submission_config import SubmissionSettings
+from gemma_agent_dev.submission_config import SubmissionSettings, timestamp
 from gemma_agent_dev.submission_state import add_candidate, empty_state, qualify_candidate
 from gemma_agent_dev.submission_store import StateStore
 
@@ -88,6 +88,12 @@ def summary(value: dict[str, Any], competition: str, *, execute: bool) -> str:
 
 def run(root: Path, args: argparse.Namespace) -> int:
     settings = SubmissionSettings.load(root, args.config)
+    execute = args.execute and args.submission_action == "run"
+    # Publish the stop signal before Git/API operations, including when state loading fails.
+    if execute and datetime.now(UTC) >= timestamp(settings.monitoring_end):
+        if output := os.environ.get("GITHUB_OUTPUT"):
+            with Path(output).open("a") as handle:
+                handle.write("stop=true\n")
     gateway = KaggleGateway(root, settings, args.api_python or Path(sys.executable))
     store = StateStore(
         root, settings.state_branch, settings.competition, settings.api_timeout_seconds
@@ -140,7 +146,6 @@ def run(root: Path, args: argparse.Namespace) -> int:
         print("提出状況を確認しました。状態更新：" + ("あり" if args.execute else "なし"))
         return 0
     # plan is always read-only even if --execute was supplied accidentally.
-    execute = args.execute and args.submission_action == "run"
     value = execute_run(
         state,
         store,

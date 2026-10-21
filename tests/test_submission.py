@@ -536,6 +536,18 @@ def test_cli_lifecycle_is_readonly_by_default(
     store.loaded = None
     assert cli.main([*registration, "--execute"]) == 1
     assert "登録候補" in capsys.readouterr().out
+    monkeypatch.setattr(
+        submission_cli,
+        "datetime",
+        type("Clock", (), {"now": staticmethod(lambda _: timestamp("2026-12-05T00:00:00Z"))}),
+    )
+
+    def unavailable() -> Any:
+        raise RuntimeError("State storage unavailable")
+
+    monkeypatch.setattr(store, "load", unavailable)
+    assert cli.main([*prefix, "run", "--mode", "monitor", "--execute"]) == 1
+    assert (tmp_path / "outputs").read_text().endswith("stop=true\n")
 
 
 @pytest.mark.parametrize(
