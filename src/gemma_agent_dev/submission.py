@@ -117,10 +117,10 @@ def top_submissions(state: dict[str, Any], count: int) -> list[dict[str, Any]]:
     )[:count]
 
 
-def incident(state: dict[str, Any], code: str | None) -> bool:
-    previous = state["incident"]
-    state["incident"] = code
-    return code is not None and previous != code
+def update_incidents(state: dict[str, Any], active: set[str]) -> bool:
+    added = active - set(state["incidents"])
+    state["incidents"] = sorted(active)
+    return bool(added)
 
 
 def execute_run(
@@ -146,12 +146,16 @@ def execute_run(
         return result(state, settings, "already_accepted", False, False)
     if after_deadline and mode != "monitor" and not expired:
         return result(state, settings, "after_deadline", False, False)
+    active = set(state["incidents"])
+    stage = "sync_failed"
     try:
         limits = synchronize(state, gateway, settings, now)
+        active.discard(stage)
         candidate, reason = decide(state, settings, limits, clock())
         if mode == "monitor" or expired:
             candidate, reason = None, "monitoring_finished" if expired else "monitor_only"
         if candidate and execute:
+            stage = f"candidate_failed:{candidate['id']}"
             with tempfile.TemporaryDirectory() as directory:
                 path = Path(directory) / "submission.zip"
                 gateway.call(
@@ -170,7 +174,10 @@ def execute_run(
                     reason = "outside_window"
                 else:
                     uploaded = gateway.call("upload", execute=True, path=str(path))
+                    active.discard(stage)
+                    stage = "sync_failed"
                     limits = synchronize(state, gateway, settings, clock())
+                    active.discard(stage)
                     current, reason = decide(state, settings, limits, clock())
                     if current and current["id"] == candidate["id"]:
                         now = clock()
@@ -181,6 +188,7 @@ def execute_run(
                             "status": "creating",
                             "submission_id": None,
                         }
+                        stage = "acceptance_unknown"
                         state["attempts"].append(attempt)
                         store.save(state)  # A failed CAS prevents the remote call.
                         if not settings.send_window(clock()):
@@ -202,14 +210,6 @@ def execute_run(
                                     raise ValueError("Submission receipt is unknown")
                                 attempt["status"], attempt["submission_id"] = "accepted", ref
                                 reason = "accepted"
-        code = (
-            "acceptance_unknown"
-            if any(a["status"] == "creating" for a in state["attempts"])
-            else None
-        )
-        if code:
-            reason = code
-        notify = incident(state, code)
     except (ValueError, RuntimeError, OSError) as error:
         # Keep SDK text out of public state. The operation name is enough for triage.
         reason = (
@@ -217,9 +217,17 @@ def execute_run(
             if any(a["status"] == "creating" for a in state["attempts"])
             else "operation_failed"
         )
-        notify = incident(state, reason)
+        active.add(stage)
         if not execute:
             raise RuntimeError("Read-only submission verification failed") from error
+    submitted = {s["content_id"] for s in state["submissions"]}
+    active.difference_update(f"candidate_failed:{identity}" for identity in submitted)
+    if any(a["status"] == "creating" for a in state["attempts"]):
+        active.add("acceptance_unknown")
+        reason = "acceptance_unknown"
+    else:
+        active.discard("acceptance_unknown")
+    notify = update_incidents(state, active)
     if execute:
         store.save(state)  # Failure here stays a real workflow failure.
     return result(state, settings, reason, notify, expired)
@@ -245,6 +253,7 @@ def result(
             for a in state["attempts"]
         ],
         "last_sync": state["last_sync"],
+        "incidents": state["incidents"],
         "final_selection": "unknown",
     }
 
@@ -265,4 +274,4 @@ def resolve_attempt(state: dict[str, Any], token: str, submission_id: int | None
         row["manual"] = False
     attempt["status"] = "accepted" if submission_id is not None else "not_accepted"
     attempt["submission_id"] = submission_id
-    state["incident"] = None
+    state["incidents"] = [item for item in state["incidents"] if item != "acceptance_unknown"]

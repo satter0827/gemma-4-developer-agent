@@ -143,7 +143,7 @@ def empty_state(competition: str) -> dict[str, Any]:
         "candidates": [],
         "attempts": [],
         "submissions": [],
-        "incident": None,
+        "incidents": [],
         "last_sync": None,
     }
 
@@ -158,8 +158,12 @@ def validate_state(value: Any, competition: str) -> dict[str, Any]:
         raise ValueError("Invalid submission state")
     if any(not isinstance(value[k], list) for k in ("candidates", "attempts", "submissions")):
         raise ValueError("Invalid state collections")
-    if value["incident"] is not None and not isinstance(value["incident"], str):
-        raise ValueError("Invalid incident")
+    if (
+        not isinstance(value["incidents"], list)
+        or any(not isinstance(item, str) or not item for item in value["incidents"])
+        or len(value["incidents"]) != len(set(value["incidents"]))
+    ):
+        raise ValueError("Invalid incidents")
     if value["last_sync"] is not None:
         timestamp(value["last_sync"])
     ids = []

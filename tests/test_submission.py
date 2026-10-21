@@ -15,10 +15,10 @@ from gemma_agent_dev.submission import (
     decide,
     description,
     execute_run,
-    incident,
     resolve_attempt,
     synchronize,
     top_submissions,
+    update_incidents,
 )
 from gemma_agent_dev.submission_api import KaggleGateway
 from gemma_agent_dev.submission_config import SubmissionSettings, timestamp
@@ -347,7 +347,8 @@ def test_resolve_and_capsule_validation(
     resolve_attempt(state, "abcdef", None)
     assert attempt["status"] == "not_accepted"
     assert validate_state(state, state["competition"]) is state
-    assert incident(state, "a") and not incident(state, "a") and not incident(state, None)
+    assert update_incidents(state, {"a"}) and not update_incidents(state, {"a"})
+    assert not update_incidents(state, set())
     path = tmp_path / "candidate.json"
     path.write_text(json.dumps(capsule))
     with pytest.raises(ValueError):
@@ -379,7 +380,7 @@ def test_state_cas(tmp_path: Path) -> None:
     assert first.load() == second.load() == state
     first.save(state)
     with pytest.raises(RuntimeError):
-        second.save({**state, "incident": "concurrent"})
+        second.save({**state, "incidents": ["concurrent"]})
 
 
 def test_archived_evidence_is_independent_of_checkout(
@@ -589,3 +590,67 @@ def test_recheck_limits_and_durable_intent_cutoff(
     )
     assert out["reason"] == "outside_window" and "create" not in api.calls
     assert store.states[-1]["attempts"][0]["status"] == "not_accepted"
+
+
+def test_monitor_success_does_not_resolve_candidate_failure(
+    settings: SubmissionSettings, candidate: tuple[dict[str, Any], Path]
+) -> None:
+    capsule, archive = candidate
+    store, api = MemoryStore(), FakeGateway(archive)
+    api.fail = "kernel"
+    first = execute_run(
+        prepared(capsule), store, api, settings, mode="morning", execute=True, clock=lambda: NOW
+    )
+    assert first["notify"]
+    night = execute_run(
+        store.states[-1],
+        store,
+        api,
+        settings,
+        mode="monitor",
+        execute=True,
+        clock=lambda: NOW + timedelta(hours=12),
+    )
+    assert not night["notify"]
+    next_day = execute_run(
+        store.states[-1],
+        store,
+        api,
+        settings,
+        mode="morning",
+        execute=True,
+        clock=lambda: NOW + timedelta(days=1),
+    )
+    assert not next_day["notify"]
+    api.fail = "history"
+    second_issue = execute_run(
+        store.states[-1],
+        store,
+        api,
+        settings,
+        mode="monitor",
+        execute=True,
+        clock=lambda: NOW + timedelta(hours=36),
+    )
+    assert second_issue["notify"] and len(second_issue["incidents"]) == 2
+    api.fail = None
+    sync_recovered = execute_run(
+        store.states[-1],
+        store,
+        api,
+        settings,
+        mode="monitor",
+        execute=True,
+        clock=lambda: NOW + timedelta(hours=37),
+    )
+    assert not sync_recovered["notify"] and len(sync_recovered["incidents"]) == 1
+    submitted = execute_run(
+        store.states[-1],
+        store,
+        api,
+        settings,
+        mode="morning",
+        execute=True,
+        clock=lambda: NOW + timedelta(days=2),
+    )
+    assert submitted["reason"] == "accepted" and not submitted["incidents"]

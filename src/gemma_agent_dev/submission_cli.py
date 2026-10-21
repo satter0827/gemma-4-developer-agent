@@ -72,6 +72,11 @@ def summary(value: dict[str, Any], competition: str, *, execute: bool) -> str:
     lines.extend(f"- 提出ID {s['id']}：{s['score']}" for s in value["top"])
     if not value["top"]:
         lines.append("スコアが確定した提出はありません。")
+    if value["incidents"]:
+        lines += [
+            "",
+            "継続中の確認事項があります。提出記録と候補の取得・照合状況を確認してください。",
+        ]
     lines += [
         "",
         "最終選択のチェック状態：未確認。提出画面で上記IDの選択を確認してください。",
