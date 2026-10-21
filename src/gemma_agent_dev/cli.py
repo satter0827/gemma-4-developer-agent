@@ -18,6 +18,7 @@ ARTIFACT_TYPES = {
 }
 CONDITION_LABELS = {
     "task_ids": "対象課題",
+    "actual_task_order": "実際の実行順序",
     "evaluation": "実行上限",
     "environment": "実行環境",
     "tasks_sha256": "課題データ",
@@ -104,6 +105,10 @@ def run_status(run: Run) -> str:
 
 
 def condition(run: Run, field: str) -> object:
+    if field == "actual_task_order":
+        from gemma_agent_dev.analysis import actual_task_order
+
+        return actual_task_order(run)
     if field == "incomplete":
         return run_status(run)
     return run.manifest.get(field, run.manifest.get("runtime_config", {}).get(field))
@@ -298,9 +303,14 @@ def main(argv: list[str] | None = None) -> int:
             invalid = report_problems(right) or invalid
             if left.kind != "evaluation" or right.kind != "evaluation":
                 raise ValueError("参照検証はエージェント評価と比較できません。")
+            from gemma_agent_dev.analysis import actual_task_order
+
             differences = comparison_differences(left, right)
+            a_order, b_order = actual_task_order(left), actual_task_order(right)
+            if a_order is None or a_order != b_order:
+                differences.append("actual_task_order")
             if differences:
-                print("比較条件に差があります。")
+                print("比較条件に差があるか、照合できない記録があります。")
                 for field in differences:
                     a, b = condition(left, field), condition(right, field)
                     if field == "submission_files" and isinstance(a, dict) and isinstance(b, dict):
@@ -322,7 +332,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print("同じ課題と実行条件で比較できます。")
             print(f"課題\t{args.left}\t{args.right}\t左の時間（秒）\t右の時間（秒）")
-            for task in dict.fromkeys(left.task_ids + right.task_ids):
+            for task in dict.fromkeys((a_order or left.task_ids) + (b_order or right.task_ids)):
                 print(
                     "\t".join(
                         str(value)

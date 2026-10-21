@@ -931,3 +931,29 @@ def test_compare_displays_explicit_task_order(
         if line.startswith(("task_z\t", "task_a\t"))
     ]
     assert rows == ["task_z", "task_a"]
+
+
+@pytest.mark.parametrize("damage", ["permuted", "missing", "duplicate"])
+def test_analysis_compares_actual_sdk_task_order_not_only_selected_ids(
+    make_run: Any, tmp_path: Path, damage: str
+) -> None:
+    left = make_run("left")
+    right = make_run("right")
+    manifest = json.loads((right / "manifest.json").read_text())
+    manifest["submission_files"]["prompts/system.md"] = "changed"
+    write_json(right / "manifest.json", manifest)
+    rows = [json.loads(line) for line in (right / "task_results.jsonl").read_text().splitlines()]
+    if damage == "permuted":
+        rows[0]["task_index"], rows[1]["task_index"] = 2, 1
+    elif damage == "missing":
+        rows[0].pop("task_index")
+    else:
+        rows[1]["task_index"] = 1
+    (right / "task_results.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    output = analysis.analyze(load_run(left), tmp_path / "analysis", 10000, load_run(right))
+    report = json.loads((output / "report.json").read_text())
+    assert (
+        report["comparison"]["outcome"] == "invalid"
+        and report["comparison"]["task_order_verified"] is False
+    )
+    assert "actual_task_order" in report["comparison"]["differences"]

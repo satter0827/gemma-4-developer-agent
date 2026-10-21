@@ -131,6 +131,19 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
     return result
 
 
+def actual_task_order(run: Run) -> list[str] | None:
+    """Use the official task indices; selected IDs do not define SDK execution order."""
+    if run.kind != "evaluation" or not run.complete:
+        return None
+    rows = list(run.rows.values())
+    if any(type(row.get("task_index")) is not int for row in rows):
+        return None
+    ordered = sorted(rows, key=lambda row: row["task_index"])
+    if [row["task_index"] for row in ordered] != list(range(1, len(run.task_ids) + 1)):
+        return None
+    return [row["instance_id"] for row in ordered]
+
+
 def analyze(run: Run, output_root: Path, max_bytes: int, other: Run | None = None) -> Path:
     if run.kind != "evaluation":
         raise ValueError("Diagnostics and controls are not agent evaluations")
@@ -140,6 +153,7 @@ def analyze(run: Run, output_root: Path, max_bytes: int, other: Run | None = Non
         "kind": "analysis",
         "run_id": run.manifest["run_id"],
         "run_complete": run.complete,
+        "actual_task_order": actual_task_order(run),
         "problems": list(run.problems),
         "source_hashes": source_hashes(run),
         "phase": run.manifest.get("phase"),
@@ -157,11 +171,17 @@ def analyze(run: Run, output_root: Path, max_bytes: int, other: Run | None = Non
             if run.manifest.get("submission_files", {}).get(k)
             != other.manifest.get("submission_files", {}).get(k)
         )
+        left_order, right_order = actual_task_order(run), actual_task_order(other)
+        order_verified = left_order is not None and left_order == right_order
+        if not order_verified:
+            differences.append("actual_task_order")
         comparable = not [d for d in differences if d != "submission_files"] and changed == [
             "prompts/system.md"
         ]
         report["comparison"] = {
             "other_run_id": other.manifest["run_id"],
+            "other_task_order": right_order,
+            "task_order_verified": order_verified,
             "other_source_hashes": source_hashes(other),
             "differences": differences,
             "changed_files": changed,

@@ -57,6 +57,7 @@ def make_run(tmp_path: Path) -> Callable[..., Path]:
             {
                 "instance_id": task,
                 "resolved": index == 0,
+                "task_index": index + 1,
                 "duration_seconds": 2.5,
                 "agent_patch_size": 10,
                 "test_exit_code": 0 if index == 0 else 1,
