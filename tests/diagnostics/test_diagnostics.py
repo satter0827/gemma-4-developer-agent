@@ -406,6 +406,9 @@ def test_preparation_downloads_once_and_rejects_cached_source_or_snapshot_change
     wheel.parent.mkdir(parents=True, exist_ok=True)
     wheel.write_bytes(b"pinned-task-dependency")
     config["tasks"][0]["dependency_wheels"] = {wheel.name: file_hash(wheel)}
+    sdk_wheel = wheel.with_name("sdk-1-linux.whl")
+    sdk_wheel.write_bytes(b"sdk-only")
+    config["tasks"][0]["sdk_dependency_wheels"] = {sdk_wheel.name: file_hash(sdk_wheel)}
     settings.catalog_path.write_text(yaml.safe_dump(config))
     settings = DiagnosticSettings.load(settings.root, settings.config_path)
     shutil.rmtree(source)
@@ -435,6 +438,7 @@ def test_preparation_downloads_once_and_rejects_cached_source_or_snapshot_change
         if args[:3] == ["uv", "pip", "install"]:
             calls.append(args)
             assert "--no-index" in args and "--no-deps" in args and args[-1] == str(wheel)
+            assert str(sdk_wheel) not in args
             return ""
         return real_command(args, **kwargs)
 

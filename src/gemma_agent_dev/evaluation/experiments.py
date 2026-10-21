@@ -105,17 +105,7 @@ class Experiment:
             "variants": {
                 name: referenced_files(path.parent, path) for name, path in self.variants.items()
             },
-            "pool": {
-                "pool_id": pool.pool_id,
-                "difficulty": pool.difficulty,
-                "tasks_sha256": pool.tasks_sha256,
-                "sdk_version": pool.sdk_version,
-                "purpose": next(
-                    use["purpose"]
-                    for use in pool.uses
-                    if use["experiment_id"] == self.experiment_id
-                ),
-            },
+            "pool": pool.identity(self.experiment_id),
             "inputs": {
                 p.relative_to(root).as_posix(): file_hash(p)
                 for p in (self.diagnostic_config, self.preflight_config, *dependencies)

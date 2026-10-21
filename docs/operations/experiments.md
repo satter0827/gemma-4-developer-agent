@@ -19,7 +19,7 @@ make cli ARGS='verify-experiment --bundle artifacts/kaggle/easy-sequential-cpu -
 
 公式CPU環境がなければ、先に `prepare-runtime-checks --config configs/environments/sdk-cpu.yaml` を実行します。CPU検証はGPUライブラリの読み込みと通信を拒否します。課題の未修正・参照修正は課題専用環境の保存済み対照検証を再照合し、公式SDK環境では同じ候補をコンパイルして合成応答を確認します。両環境の依存は混ぜません。Kaggleの実行経路では公式ハーネスの対照検証をモデル起動前に改めて行います。確認用12問の環境準備は初回実験に含みません。
 
-後のGPU用コード生成には、返された `session.json` と、観測したquotaのJSONが必要です。quotaは `consumed`（対象予算内の消費時間）、`remaining`（公式画面の残時間）、`completed_runs`、`active` を指定します。不明な値を0にしません。Skill比較v2は開発予算7時間・予備1時間・追加1回90分です。既存消費2.830299時間と2実行を引き継ぎ、追加quotaの上限3時間を確認します。コード生成自体はNotebookをアップロード・起動しません。生成から起動までに枠や実行状態が変わった場合は再確認してください。
+後のGPU用コード生成には、返された `session.json` と、観測したquotaのJSONが必要です。quotaは `consumed`（対象予算内の消費時間）、`remaining`（公式画面の残時間）、`completed_runs`、`active` を指定します。不明な値を0にしません。Skill比較v3は開発予算7時間・予備1時間・追加1回90分です。既存消費2.830299時間と2実行を引き継ぎ、追加quotaの上限3時間を確認します。コード生成自体はNotebookをアップロード・起動しません。生成から起動までに枠や実行状態が変わった場合は再確認してください。
 
 ```sh
 make cli ARGS='prepare-kaggle --name easy-sequential-gpu --experiment-report artifacts/experiments/実行ID/preparation.json --cpu-report artifacts/experiment-verification/実行ID/session.json --quota artifacts/quota.json'
@@ -44,13 +44,13 @@ GPU実行前には、最新のCPU証拠、候補ハッシュ、固定した課�
 ```sh
 make cli ARGS='plan-experiment --config configs/tasks/rotation.yaml'
 make cli ARGS='validate-experiment --config configs/evaluation/easy-sequential-v2.yaml'
-make cli ARGS='validate-experiment --config configs/evaluation/easy-skills-v2.yaml'
-make cli ARGS='prepare-experiment-tasks --config configs/evaluation/easy-skills-v2.yaml'
+make cli ARGS='validate-experiment --config configs/evaluation/easy-skills-v3.yaml'
+make cli ARGS='prepare-experiment-tasks --config configs/evaluation/easy-skills-v3.yaml'
 ```
 
-予算変更後のSkill比較にはv2を使います。Skill v1と逐次構成の定義は過去の条件として保持し、逐次構成の実モデル評価は行いません。Skill比較は別の仮説であり、逐次構成や最適化と同時に変更しません。
+環境補正後のSkill比較にはv3を使います。Skill v1と逐次構成の定義は過去の条件として保持し、逐次構成の実モデル評価は行いません。Skill比較は別の仮説であり、逐次構成や最適化と同時に変更しません。
 
-巡回コマンドは次の未使用課題群を提案し、宣言済みのIDや順序を変更しません。`matches_declared_selection`がfalseなら新しい提案として扱い、既に固定した比較対象へ適用しません。Skill v2はv1と同じ6問を引き継ぐため、旧IDの予約がある状態でも固定6問を維持します。CPU対照が成立しなければ準備失敗として残し、成績を付けたり補欠と交換したりしません。候補固定とSDK検証は前述と同じ経路です。Skill資産の変更でも新しい候補とCPU記録が必要になります。
+巡回コマンドは次の未使用課題群を提案し、宣言済みのIDや順序を変更しません。`matches_declared_selection`がfalseなら新しい提案として扱い、既に固定した比較対象へ適用しません。Skill v3はv1・v2と同じ6問を引き継ぐため、旧IDの予約がある状態でも固定6問を維持します。CPU対照が成立しなければ準備失敗として残し、成績を付けたり補欠と交換したりしません。候補固定とSDK検証は前述と同じ経路です。Skill資産の変更でも新しい候補とCPU記録が必要になります。
 
 ## 公開記録の作成
 
@@ -82,10 +82,10 @@ make cli ARGS='summarize-experiment --session artifacts/results/実行ID/session
 
 ```sh
 make cli ARGS='prepare-optimization-environment --config configs/environments/gepa.yaml'
-make cli ARGS='validate-optimization --config configs/evaluation/easy-gepa-v1.yaml'
+make cli ARGS='validate-optimization --config configs/evaluation/easy-gepa-v2.yaml'
 make cli ARGS='prepare-experiment-tasks --config configs/evaluation/easy-sequential-v2.yaml'
 make check
-make cli ARGS='prepare-optimization --config configs/evaluation/easy-gepa-v1.yaml'
+make cli ARGS='prepare-optimization --config configs/evaluation/easy-gepa-v2.yaml'
 make cli ARGS='prepare-kaggle --name easy-gepa-cpu --optimization-report artifacts/optimizations/実行ID/preparation.json --verify-only'
 make cli ARGS='verify-optimization --bundle artifacts/kaggle/easy-gepa-cpu --sdk-config configs/environments/sdk-cpu.yaml'
 ```

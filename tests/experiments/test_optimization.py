@@ -961,3 +961,23 @@ def test_completed_context_budget_outcome_uses_the_official_result() -> None:
         )
     )
     assert value.feedback()["resolved"] is False and value.termination == "context_window_exceeded"
+
+
+def test_optimization_identity_ignores_other_reservations_but_checks_selected_role(
+    optimization_project: Path,
+) -> None:
+    root = optimization_project
+    before = Optimization.load(root, Path("optimization.yaml")).definition(root)
+    pool_path = root / "pool.yaml"
+    data = yaml.safe_load(pool_path.read_text())
+    data["uses"].append(
+        dict(experiment_id="unrelated", purpose="confirmation", task_ids=["unused_1"])
+    )
+    pool_path.write_text(yaml.safe_dump(data))
+    assert Optimization.load(root, Path("optimization.yaml")).definition(root) == before
+    data["tuning"].remove("fixture_2")
+    data["confirmation"].append("fixture_2")
+    data["uses"][0]["task_ids"] = ["fixture_1"]
+    pool_path.write_text(yaml.safe_dump(data))
+    with pytest.raises(ValueError):
+        Optimization.load(root, Path("optimization.yaml"))

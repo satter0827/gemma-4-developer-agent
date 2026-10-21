@@ -3,7 +3,6 @@
 import hashlib
 import json
 import subprocess
-from dataclasses import asdict
 from pathlib import Path
 
 from gemma_agent_dev.candidates.preflight import artifact_limit, load_report
@@ -54,13 +53,7 @@ def prepare(
                 "max_unpacked_bytes": settings.max_unpacked_bytes,
                 "max_artifact_bytes": artifact_limit(root),
                 "snapshots": {i: catalog.tasks[i].snapshot_sha256 for i in config["task_ids"]},
-                "sources": {
-                    i: {
-                        k: asdict(catalog.tasks[i])[k]
-                        for k in ("source_roots", "import_modules", "dependency_wheels")
-                    }
-                    for i in config["task_ids"]
-                },
+                "sources": {i: catalog.tasks[i].sdk_source() for i in config["task_ids"]},
                 "tasks_sha256": catalog.tasks_sha256,
             }
         ).encode(),

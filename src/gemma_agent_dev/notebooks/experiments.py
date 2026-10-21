@@ -6,7 +6,6 @@ import json
 import os
 import tempfile
 import zipfile
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -56,13 +55,7 @@ def prepare(
         "variants": report["variants"],
         "tasks_sha256": catalog.tasks_sha256,
         "snapshots": {i: catalog.tasks[i].snapshot_sha256 for i in experiment.task_ids},
-        "sources": {
-            i: {
-                k: asdict(catalog.tasks[i])[k]
-                for k in ("source_roots", "import_modules", "dependency_wheels")
-            }
-            for i in experiment.task_ids
-        },
+        "sources": {i: catalog.tasks[i].sdk_source() for i in experiment.task_ids},
     }
     inputs = {
         "runtime.json": json.dumps(runtime).encode(),

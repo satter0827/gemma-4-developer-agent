@@ -5,7 +5,6 @@ import json
 import os
 import tempfile
 import zipfile
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -92,13 +91,7 @@ def prepare(
         "candidate": prepared["candidate"],
         "tasks_sha256": catalog.tasks_sha256,
         "snapshots": {t: catalog.tasks[t].snapshot_sha256 for t in task_ids},
-        "sources": {
-            t: {
-                k: asdict(catalog.tasks[t])[k]
-                for k in ("source_roots", "import_modules", "dependency_wheels")
-            }
-            for t in task_ids
-        },
+        "sources": {t: catalog.tasks[t].sdk_source() for t in task_ids},
         "native_controls": prepared["controls"],
         "max_artifact_bytes": artifact_limit(root),
         "gepa": {"wheel_name": environment.wheel_name, "wheel_sha256": environment.wheel_sha256},

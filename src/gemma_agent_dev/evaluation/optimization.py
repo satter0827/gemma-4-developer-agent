@@ -120,7 +120,7 @@ class Optimization:
 
     def definition(self, root: Path) -> dict[str, Any]:
         environment = yaml.safe_load(self.environment.read_text())
-        inputs = [self.diagnostic_config, self.environment, self.pool]
+        inputs = [self.diagnostic_config, self.environment]
         inputs.extend(project_path(root, environment[key]) for key in ("requirements", "lock_file"))
         return {
             "optimization_id": self.optimization_id,
@@ -128,6 +128,7 @@ class Optimization:
             "search_task_ids": self.search_task_ids,
             "selection_task_ids": self.selection_task_ids,
             "prompt_path": self.prompt_path,
+            "pool": TaskPool.load(root, self.pool).identity(self.optimization_id),
             "runtime": RuntimeSettings.load(self.runtime_config).as_dict(),
             "evaluation": EvaluationSettings.load(self.evaluation_config).as_dict(),
             "limits": asdict(self.limits),

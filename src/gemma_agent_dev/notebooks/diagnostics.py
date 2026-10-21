@@ -3,7 +3,6 @@
 import hashlib
 import json
 import subprocess
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -80,12 +79,7 @@ def verified_spec(settings: DiagnosticSettings) -> dict[str, Any]:
         "task_ids": [t.instance_id for t in settings.tasks],
         "tasks_sha256": settings.tasks_sha256,
         "snapshots": {t.instance_id: t.snapshot_sha256 for t in settings.tasks},
-        "sources": {
-            t.instance_id: {
-                k: asdict(t)[k] for k in ("source_roots", "import_modules", "dependency_wheels")
-            }
-            for t in settings.tasks
-        },
+        "sources": {t.instance_id: t.sdk_source() for t in settings.tasks},
         "runtime": settings.runtime.as_dict(),
         "timeout_seconds": settings.timeout_seconds,
         "lock_sha256": file_hash(settings.lock_file),

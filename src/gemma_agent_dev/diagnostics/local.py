@@ -69,7 +69,7 @@ def prepare(settings: DiagnosticSettings) -> Path:
     catalog = TaskCatalog.load(settings.root, settings.catalog_path)
     catalog.wheel_cache.mkdir(parents=True, exist_ok=True)
     for task in settings.tasks:
-        for name, digest in task.dependency_wheels.items():
+        for name, digest in task.sdk_wheels().items():
             wheel = catalog.wheel_cache / name
             if not wheel.exists():
                 package, version, _ = name.split("-", 2)
