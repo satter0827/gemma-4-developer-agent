@@ -1,9 +1,0 @@
-agent_dir: agent
-profiles: configs/profiles.yaml
-runtime_config: configs/runtime.json
-diagnostic_config: configs/diagnostics/fastapi.yaml
-adapter_archive: artifacts/results/policy-20261020-30tools-gpu/artifacts/results/20261020T072100Z-e679cea7/submission.zip
-adapter_sha256: 2d8f8407e1f4d8737dd68311873911bfc4368b982ce4e8e95081fa786b359a29
-output_dir: artifacts/preflight
-max_unpacked_bytes: 3221225472
-quality_timeout_seconds: 600

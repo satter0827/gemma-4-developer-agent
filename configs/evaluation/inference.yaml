@@ -1,0 +1,26 @@
+vllm:
+  port: 8000
+  host: 127.0.0.1
+  tool_call_parser: gemma4
+  reasoning_parser: gemma4
+  max_model_len: 32768
+  dtype: bfloat16
+  gpu_memory_utilization: 0.9
+  enable_auto_tool_choice: true
+  enable_lora: true
+  max_loras: 8
+  max_lora_rank: 128
+  tensor_parallel_size: 4
+  startup_timeout: 1200
+  scheduler_reserve_full_isl: false
+context_cache:
+  min_tokens: 2048
+  ttl_seconds: 1800
+  cache_intervals: 10
+compaction:
+  compaction_interval: 15
+  overlap_size: 2
+  token_threshold: 14336
+  event_retention_size: 5
+verification_timeout_seconds: 300
+concurrency: 1

@@ -1,0 +1,4 @@
+environment: configs/environments/kaggle.yaml
+inference: configs/evaluation/inference.yaml
+sdk: configs/environments/sdk.lock.json
+tasks: configs/tasks/smoke.yaml

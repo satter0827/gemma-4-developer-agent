@@ -1,0 +1,12 @@
+rich_3278:
+  target: explicit
+  behavior: explicit
+  reproduction: unknown
+  fix: explicit
+  basis: 課題文に対象箇所と修正方針の記載を確認。再現手順は未確認。
+rich_3454:
+  target: explicit
+  behavior: explicit
+  reproduction: unknown
+  fix: explicit
+  basis: 課題文に対象箇所と修正方針の記載を確認。再現手順は未確認。

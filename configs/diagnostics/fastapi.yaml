@@ -1,9 +1,9 @@
-runtime_path: configs/runtime.json
+runtime_path: configs/evaluation/runtime.yaml
 cache_dir: artifacts/reference/diagnostics
 environments_dir: artifacts/task-envs
 output_dir: artifacts/diagnostics
-requirements: configs/diagnostics/requirements.in
-lock_file: configs/diagnostics/requirements.lock
+requirements: configs/environments/diagnostics.in
+lock_file: configs/environments/diagnostics.lock
 python_version: '3.12'
 kernel_id: satter0927/gemma-4-developer-agent-diagnostics
 timeout_seconds: 300
@@ -38,4 +38,4 @@ tasks:
   - old: must not contain newlines
     new: must be a single line
     count: 2
-catalog_path: configs/tasks.yaml
+catalog_path: configs/tasks/catalog.yaml

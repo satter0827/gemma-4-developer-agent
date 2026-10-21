@@ -1,0 +1,22 @@
+runs:
+- manifest: artifacts/results/comparison-baseline-gpu-20261021/artifacts/results/20261021T010127Z-1111b3cc/manifest.json
+  quota_before: artifacts/validation/20261021/quota-before-baseline.json
+  quota_after: artifacts/validation/20261021/quota-after-baseline.json
+  hashes:
+    manifest: 4cf406fb8cd30d4f75f197be8a44355c1618b55cb871369eb920be19ac1d3903
+    quota_before: b5db4f787b0806cfcd41fcacba9d26f96a3a2151f4ff08c1e0b24d7b4120d272
+    quota_after: 9c5c72c2a0fb4ec68c7fd1f3ea2a45eb30192afe85b2579651f9633c73073a61
+- manifest: artifacts/results/comparison-workflow-gpu-20261021/artifacts/results/20261021T014640Z-48c82b1c/manifest.json
+  quota_before: artifacts/validation/20261021/quota-before-workflow.json
+  quota_after: artifacts/validation/20261021/quota-after-workflow.json
+  hashes:
+    manifest: 89f6b72d96e3a125d734210dcd63085c33ce064e1025dcb4618fafb30303c4ba
+    quota_before: a34c36c62c6f00001ad3037dbdcbb0997cf3aed6b21d02a561a8ac514926c6b4
+    quota_after: 7b11435f81a81d0a761874377b43802a604ce69fb9abf04359b7930eeec98885
+scenario_counts:
+- 1
+- 2
+- 4
+- 6
+- 8
+- 12

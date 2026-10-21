@@ -1,0 +1,14 @@
+competition: gemma-4-developer-agent
+kernel_id: satter0927/gemma-4-developer-agent-baseline
+model_source: google/gemma-4/Other/gemma-4-31b-it-qat-w4a16-ct/2
+wheelhouse_source: metric/gemma-4-developer-agent-wheelhouse
+docker_image: gcr.io/kaggle-private-byod/python@sha256:37c64f7dd9c54116ecd1bcc88817c5469b88387388fade02bfa8bf3fc647d461
+machine_shape: NvidiaL4
+paths:
+  data: /kaggle/input/competitions/gemma-4-developer-agent
+  model: /kaggle/input/models/google/gemma-4/other/gemma-4-31b-it-qat-w4a16-ct/2
+  wheelhouse: /kaggle/input/datasets/metric/gemma-4-developer-agent-wheelhouse
+  output: /kaggle/working/artifacts/results
+verification_kernel_id: satter0927/gemma-4-developer-agent-verification
+job_timeout_seconds: 2700
+progress_interval_seconds: 5

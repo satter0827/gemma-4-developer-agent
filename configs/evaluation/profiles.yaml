@@ -1,0 +1,15 @@
+smoke:
+  purpose: smoke
+  evaluation_config: agent/eval_config.yaml
+  instruction: agent/prompts/system.md
+  task_selection: null
+baseline:
+  purpose: comparison
+  evaluation_config: configs/evaluation/comparison.yaml
+  instruction: agent/prompts/system.md
+  task_selection: artifacts/qualification/current.json
+workflow:
+  purpose: comparison
+  evaluation_config: configs/evaluation/comparison.yaml
+  instruction: agent/prompts/workflow.md
+  task_selection: artifacts/qualification/current.json

@@ -11,9 +11,10 @@ from typing import Any
 import pytest
 import yaml
 
-from gemma_agent_dev.artifacts import file_hash, inventory, write_json
-from gemma_agent_dev.diagnostic_config import DiagnosticSettings
-from gemma_agent_dev.diagnostics import installed_environment
+from gemma_agent_dev.common.artifacts import file_hash, inventory, write_json
+from gemma_agent_dev.diagnostics.config import DiagnosticSettings
+from gemma_agent_dev.diagnostics.local import installed_environment
+from gemma_agent_dev.evaluation.config import RuntimeSettings
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -88,8 +89,7 @@ def diagnostic_project(tmp_path: Path) -> DiagnosticSettings:
     (root / "artifacts/tmp").mkdir(parents=True)
     (root / "pyproject.toml").touch()
     shutil.copytree(ROOT / "src", root / "src")
-    shutil.copytree(ROOT / "kaggle", root / "kaggle")
-    config = json.loads((ROOT / "configs/runtime.json").read_text())
+    config = RuntimeSettings.load(ROOT / "configs/evaluation/runtime.yaml").as_dict()
     config["task_ids"] = ["fixture_1"]
     write_json(root / "runtime.json", config)
     generated = "--- a/calc.py\n+++ b/calc.py\n@@ -1 +1 @@\n-value = 0\n+value = -1\n"
@@ -169,7 +169,7 @@ def diagnostic_project(tmp_path: Path) -> DiagnosticSettings:
     write_json(
         cache / "prepared.json",
         {
-            "fingerprint": settings.fingerprint(),
+            "fingerprint": settings.preparation_fingerprint(),
             "sources": {"fixture_1": {"files": inventory(source)}},
             "environments": {"fixture_1": installed_environment(task_env / "python", settings)},
         },
@@ -196,7 +196,7 @@ def preflight_project(diagnostic_project: DiagnosticSettings) -> Path:
         yaml.safe_dump(
             {
                 "agent_dir": "agent",
-                "profiles": "configs/profiles.yaml",
+                "profiles": "configs/evaluation/profiles.yaml",
                 "runtime_config": "runtime.json",
                 "diagnostic_config": "diagnostics.yaml",
                 "adapter_archive": "adapters.zip",
@@ -212,7 +212,7 @@ def preflight_project(diagnostic_project: DiagnosticSettings) -> Path:
 
 @pytest.fixture
 def preflight_report(preflight_project: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    from gemma_agent_dev import preflight
+    from gemma_agent_dev.candidates import preflight
 
     @contextmanager
     def quality(args: list[str], **kwargs: Any) -> Iterator[Any]:
@@ -227,8 +227,8 @@ def preflight_report(preflight_project: Path, monkeypatch: pytest.MonkeyPatch) -
 
 @pytest.fixture
 def cpu_evidence(preflight_project: Path, preflight_report: Path) -> Path:
-    from gemma_agent_dev.config import RuntimeSettings
-    from gemma_agent_dev.kaggle_bundle import prepare
+    from gemma_agent_dev.evaluation.config import RuntimeSettings
+    from gemma_agent_dev.notebooks.evaluation import prepare
 
     folder = preflight_project / "artifacts/cpu"
     folder.mkdir(parents=True)

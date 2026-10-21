@@ -104,7 +104,6 @@ def check(root: Path, policy: dict[str, Any]) -> list[str]:
             if name.startswith("gemma_agent_dev") and dependency.split(".")[0] in {
                 "tests",
                 "scripts",
-                "kaggle",
             }:
                 errors.append(f"Production imports development entrypoint: {name} -> {dependency}")
             if roles[name] in policy["gpu_free_roles"] and any(

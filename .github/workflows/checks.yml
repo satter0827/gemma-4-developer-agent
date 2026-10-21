@@ -42,4 +42,4 @@ jobs:
         run: |
           uv sync --frozen --group submission --no-editable
           uv run --no-sync python -c 'import kagglesdk.kaggle_client'
-          uv run --no-sync pytest -q tests/test_submission_api.py -k pinned_sdk --basetemp=artifacts/tmp/submission-sdk
+          uv run --no-sync pytest -q tests/submission/test_submission_api.py -k pinned_sdk --basetemp=artifacts/tmp/submission-sdk
