@@ -17,7 +17,7 @@
 ## 有効化
 
 1. 実装をmainへ反映します。
-2. リポジトリのActions Secretに`KAGGLE_API_TOKEN`を登録します。値はコード・ログ・状態ブランチへ記録しません。
+2. [KaggleのAPI Tokens設定](https://www.kaggle.com/settings/api)で定期実行用のAPI Tokenを用意し、リポジトリのActions Secretへ`KAGGLE_API_TOKEN`として登録します。値はコード・ログ・状態ブランチへ記録しません。
 3. ローカルでは`make setup-submission`で提出専用依存を追加します。別の既存SDK環境を使う場合は、提出コマンドの`--api-python`でPythonを指定します。
 4. 初期候補と設定を確認し、状態を初期化します。
 
@@ -29,6 +29,12 @@ make cli ARGS='submission --config configs/submission/policy.yaml plan'
 
 5. GitHub Actionsの手動起動で未送信確認を行います。手動起動からは送信も状態更新も行いません。
 6. リポジトリ変数`KAGGLE_SUBMISSION_ENABLED`を`true`にします。実送信は次の定時実行から有効です。
+
+手元の`kaggle auth login`によるOAuth認証は、GitHub Actionsへ自動では引き継がれません。CLIが使えることと、定期実行用の認証が設定済みであることを区別してください。KaggleもCI/CD用途にはAPI Tokens設定で作成したトークンを案内しています。[公式の認証説明](https://www.kaggle.com/docs/api)
+
+有効期限は最終結果確認の2026年12月4日20:15より後まで必要です。期限を確認できないトークンや、運用途中で失効する短期トークンのまま有効化しません。2026年10月22日の実接続では、OAuth認証からのトークン発行は最大16時間という応答でした。期限とSDKの変換結果の詳細は[設定確認の記録](../records/submission-setup-20261022.md)に残しています。
+
+ワークフロー自体の状態が`active`でも、定期実行は`KAGGLE_SUBMISSION_ENABLED=true`のときだけ処理します。Secret・提出状態・GitHub上の未送信確認を揃えてから変数を設定してください。無効のままなら定時ジョブはスキップされます。
 
 初期候補はworkflowの実行`20261021T014640Z-48c82b1c`です。CPU参照検証とGPUの開発用評価3/6を確認したZIPを、非公開Notebook `satter0927/gemma-4-developer-agent-baseline`の版10から取得します。開発用の3/6は正式スコアではありません。
 
