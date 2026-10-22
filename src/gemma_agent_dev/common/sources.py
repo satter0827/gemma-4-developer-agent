@@ -9,6 +9,7 @@ BASE_MODULES = (
     "common.config",
     "common.junit",
     "common.processes",
+    "common.ownership",
     "evaluation.config",
     "evaluation.official",
     "diagnostics.origins",
@@ -33,6 +34,8 @@ EXPERIMENT_MODULES = (
     "evaluation.session_worker",
     "evaluation.sequential_checks",
     "evaluation.skill_checks",
+    "evaluation.skill_chain",
+    "evaluation.sdk_worker",
     "candidates.changes",
 )
 OPTIMIZATION_MODULES = (
@@ -54,6 +57,7 @@ LOCAL_DIAGNOSTIC_MODULES = (
     "common.config",
     "common.junit",
     "common.processes",
+    "common.ownership",
     "diagnostics.config",
     "diagnostics.local",
     "diagnostics.origins",

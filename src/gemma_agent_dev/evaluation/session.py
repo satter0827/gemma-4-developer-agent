@@ -7,22 +7,28 @@ import os
 import platform
 import shutil
 import time
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from gemma_agent_dev.candidates.archive import extract_archive, validate_references
-from gemma_agent_dev.candidates.changes import ChangeScope, validate_change
+from gemma_agent_dev.candidates.archive import (
+    declared_skills,
+    extract_archive,
+    generation_contract,
+    validate_references,
+)
+from gemma_agent_dev.candidates.changes import ChangeScope, validate_change, validate_generation
 from gemma_agent_dev.common.artifacts import file_hash, inventory, new_run_id, write_json
 from gemma_agent_dev.common.events import bundle_session, context, event, logged
+from gemma_agent_dev.common.processes import time_limit
 from gemma_agent_dev.evaluation.analysis import emit_tool_events
 from gemma_agent_dev.evaluation.config import EvaluationSettings, RuntimeSettings
-from gemma_agent_dev.evaluation.control_evidence import copy_native_controls
+from gemma_agent_dev.evaluation.control_evidence import control_identity, copy_native_controls
 from gemma_agent_dev.evaluation.official import (
     create_server,
     evaluate,
     expected_model,
-    generation_contract,
     make_validator,
     select_tasks,
     start_model,
@@ -33,6 +39,24 @@ from gemma_agent_dev.evaluation.results import load_run
 from gemma_agent_dev.evaluation.runtime import validate_evaluation
 from gemma_agent_dev.evaluation.session_policy import VARIANTS_PER_PAIR, SessionPolicy
 from gemma_agent_dev.notebooks.environment import install_wheelhouse
+
+
+def model_conditions(runtime: dict[str, Any], output: Path) -> dict[str, Any]:
+    try:
+        available = os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+    except (ValueError, OSError):
+        available = None
+    model = Path(runtime["paths"]["model"])
+    return {
+        "source": runtime["model_source"],
+        "path": str(model),
+        "load_strategy": "default",
+        "placement": "configured_path",
+        "physical_memory_bytes": os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE"),
+        "available_memory_bytes": available,
+        "output_disk": shutil.disk_usage(output)._asdict(),
+        "model_disk": shutil.disk_usage(model)._asdict() if model.exists() else None,
+    }
 
 
 def evaluation_config(
@@ -88,6 +112,11 @@ def prepare_candidates(
             raise ValueError("Experiment snapshot changed")
     submissions = {}
     common = None
+    allowed = (
+        ChangeScope.parse(spec["definition"]["change"]).generation_fields
+        if "change" in spec["definition"]
+        else []
+    )
     for name, candidate in spec["variants"].items():
         archive = root / name / "submission.zip"
         if file_hash(archive) != candidate["sha256"]:
@@ -98,11 +127,24 @@ def prepare_candidates(
         if files != candidate["files"]:
             raise ValueError("Experiment candidate files changed")
         conditions = {
-            k: v
-            for k, v in files.items()
-            if k.startswith("adapters/") or k in {"configs/sampling.yaml", "eval_config.yaml"}
+            k: v for k, v in files.items() if k.startswith("adapters/") or k == "eval_config.yaml"
         }
-        conditions["@generation"] = json.dumps(generation_contract(submission), sort_keys=True)
+        conditions["@generation"] = json.dumps(
+            sorted(
+                {
+                    json.dumps(
+                        {
+                            "model": contract["model"],
+                            "generation": {
+                                k: v for k, v in contract["generation"].items() if k not in allowed
+                            },
+                        },
+                        sort_keys=True,
+                    )
+                    for contract in generation_contract(submission)
+                }
+            )
+        )
         if common is not None and common != conditions:
             raise ValueError("Shared sessions require identical adapters, sampling and evaluation")
         common = conditions
@@ -113,6 +155,8 @@ def prepare_candidates(
             submissions,
             {name: item["files"] for name, item in spec["variants"].items()},
         )
+    else:
+        validate_generation(submissions, [])
     return submissions
 
 
@@ -146,6 +190,7 @@ def run_cell(
         "submission_files": candidate["files"],
         "runtime_config": runtime,
         "evaluation": EvaluationSettings.load(submission / "eval_config.yaml").as_dict(),
+        "generation": generation_contract(submission),
         "tasks_sha256": spec["tasks_sha256"],
         "snapshots": {task: spec["snapshots"][task]},
         "source_setup": {task: spec["sources"][task]},
@@ -218,6 +263,7 @@ def _run(
             raise ValueError("Local path bindings are restricted to CPU verification")
         runtime["paths"].update({k: v for k, v in bindings.items() if k != "native_controls"})
     started = time.monotonic()
+    job_started = min(started, float(os.environ.get("GEMMA_JOB_STARTED_MONOTONIC", str(started))))
     deadline = min(
         started + policy.job_timeout_seconds,
         float(
@@ -238,72 +284,111 @@ def _run(
         "planned_order": spec["definition"]["planned_order"],
         "task_ids": spec["definition"]["task_ids"],
         "variants": {name: value["sha256"] for name, value in spec["variants"].items()},
+        "worker_completion_required": bool(
+            provenance.get("job_id")
+            and Path(os.environ.get("GEMMA_PROCESS_REGISTRY", "")).parent.name
+            == provenance["job_id"]
+        ),
         "actual_order": [],
         "cells": [],
-        "controls": {},
         "runtime_config": runtime,
         "evidence_inputs": {k: spec[k] for k in ("tasks_sha256", "snapshots", "sources")},
         "sdk_packages": runtime["packages"],
+        "environment": {"python": platform.python_version(), "sandbox": "subprocess"},
         "control_engine": "native-python" if bindings else "official-sdk",
-        "timings": {},
+        "timings": {"bootstrap_seconds": started - job_started},
     }
     write_json(path, report)
     server = None
     failure: BaseException | None = None
+    evaluation_started: float | None = None
     try:
-        if not bindings:
-            install_wheelhouse(
-                Path(runtime["paths"]["wheelhouse"]),
-                output,
-                runtime["vllm"]["startup_timeout"],
-                runtime["wheelhouse_hashes"],
+        report["completion_budget"] = policy.completion(
+            spec["definition"]["evaluation"], runtime, len(report["task_ids"])
+        )
+        if not verify_only:
+            policy.require_completion(
+                spec["definition"]["evaluation"], runtime, len(report["task_ids"])
             )
-        if {name: importlib.metadata.version(name) for name in runtime["packages"]} != runtime[
-            "packages"
-        ]:
-            raise ValueError("Official SDK versions changed")
-        submissions = prepare_candidates(root, output, spec, runtime)
-        report["candidate_archives"] = {}
-        for name, candidate in spec["variants"].items():
-            archive = output / "archives" / name / "submission.zip"
-            archive.parent.mkdir(parents=True)
-            shutil.copyfile(root / name / "submission.zip", archive)
-            report["candidate_archives"][name] = {
-                "path": archive.relative_to(output).as_posix(),
-                "sha256": file_hash(archive),
+        guard: AbstractContextManager[None] = nullcontext()
+        if not verify_only:
+            assert policy.preparation_timeout_seconds is not None
+            guard = time_limit(
+                policy.preparation_timeout_seconds - (time.monotonic() - job_started)
+            )
+        with guard:
+            if not bindings:
+                preparation_remaining = None
+                if not verify_only:
+                    assert policy.preparation_timeout_seconds is not None
+                    preparation_remaining = policy.preparation_timeout_seconds - (
+                        time.monotonic() - job_started
+                    )
+                install_wheelhouse(
+                    Path(runtime["paths"]["wheelhouse"]),
+                    output,
+                    runtime["vllm"]["startup_timeout"],
+                    runtime["wheelhouse_hashes"],
+                    preparation_timeout=preparation_remaining,
+                )
+            report["timings"]["dependencies_seconds"] = time.monotonic() - started
+            inputs_started = time.monotonic()
+            if {name: importlib.metadata.version(name) for name in runtime["packages"]} != runtime[
+                "packages"
+            ]:
+                raise ValueError("Official SDK versions changed")
+            submissions = prepare_candidates(root, output, spec, runtime)
+            report["generation"] = {
+                name: generation_contract(folder) for name, folder in submissions.items()
             }
-            if report["candidate_archives"][name]["sha256"] != candidate["sha256"]:
-                raise ValueError("Archived experiment candidate changed")
-        server = create_server(next(iter(submissions.values())), runtime)
-        (output / "vllm.log").hardlink_to(server.log_path)
-        if verify_only:
-            from gemma_agent_dev.evaluation.sequential_checks import run as check_sequential
-            from gemma_agent_dev.evaluation.skill_checks import run as check_skill
+            report["candidate_archives"] = {}
+            for name, candidate in spec["variants"].items():
+                archive = output / "archives" / name / "submission.zip"
+                archive.parent.mkdir(parents=True)
+                shutil.copyfile(root / name / "submission.zip", archive)
+                report["candidate_archives"][name] = {
+                    "path": archive.relative_to(output).as_posix(),
+                    "sha256": file_hash(archive),
+                }
+                if report["candidate_archives"][name]["sha256"] != candidate["sha256"]:
+                    raise ValueError("Archived experiment candidate changed")
+            server = create_server(next(iter(submissions.values())), runtime)
+            (output / "vllm.log").hardlink_to(server.log_path)
+            if verify_only:
+                from gemma_agent_dev.evaluation.sdk_worker import request_contract
+                from gemma_agent_dev.evaluation.sequential_checks import run as check_sequential
+                from gemma_agent_dev.evaluation.skill_checks import run as check_skill
 
-            for name, submission in submissions.items():
-                if "sub_agents/verify-v1.yaml" in spec["variants"][name]["files"]:
-                    report["sequential_contract"] = check_sequential(
-                        submission, output / "sequential-contract.json"
-                    )
-                if (
-                    "skills/python-verification-v1/scripts/check.py"
-                    in spec["variants"][name]["files"]
-                ):
-                    report["skill_contract"] = check_skill(
-                        submission,
-                        output / "skill-contract",
-                        runtime["verification_timeout_seconds"],
-                    )
-        from swegemma.models import load_tasks
+                for name, submission in submissions.items():
+                    report.setdefault("generation_requests", {})[name] = [
+                        asyncio.run(request_contract(contract["generation"]))
+                        for contract in report["generation"][name]
+                    ]
+                    if "sub_agents/verify-v1.yaml" in spec["variants"][name]["files"]:
+                        report["sequential_contract"] = check_sequential(
+                            submission, output / "sequential-contract.json"
+                        )
+                    if declared_skills(submission):
+                        report.setdefault("skill_contracts", {})[name] = check_skill(
+                            submission,
+                            output / "contracts" / name / "skill",
+                            runtime["verification_timeout_seconds"],
+                        )
+            from swegemma.models import load_tasks
 
-        tasks = load_tasks(Path(runtime["paths"]["data"]) / "tasks.jsonl")
-        for name, submission in submissions.items():
-            folder = output / "controls" / name
+            tasks = load_tasks(Path(runtime["paths"]["data"]) / "tasks.jsonl")
+            folder = output / "controls/shared"
             folder.mkdir(parents=True)
-            configuration = evaluation_config(
-                runtime, server, submission, folder, spec["definition"]["task_ids"]
-            )
-            make_validator(configuration, expected_model(runtime))(submission)
+            configurations = []
+            for submission in submissions.values():
+                configuration = evaluation_config(
+                    runtime, server, submission, folder, spec["definition"]["task_ids"]
+                )
+                make_validator(configuration, expected_model(runtime))(submission)
+                configurations.append(configuration)
+            report["timings"]["inputs_seconds"] = time.monotonic() - inputs_started
+            controls_started = time.monotonic()
+            configuration = configurations[0]
             if bindings:
                 copy_native_controls(
                     Path(bindings["native_controls"]),
@@ -317,11 +402,19 @@ def _run(
                 )
             ):
                 raise RuntimeError("Experiment controls failed")
-            report["controls"][name] = inventory(folder)
+            report["control_evidence"] = {
+                "directory": "controls/shared",
+                "condition_sha256": control_identity(report),
+                "files": inventory(folder),
+            }
+            report["timings"]["controls_seconds"] = time.monotonic() - controls_started
             write_json(path, report)
-        report["timings"]["cpu_seconds"] = time.monotonic() - started
+        report["timings"]["cpu_seconds"] = time.monotonic() - job_started
         if not verify_only:
-            report["timings"]["model_startup_seconds"] = start_model(server, runtime)
+            report["model_preparation"] = model_conditions(runtime, output)
+            with time_limit(runtime["vllm"]["startup_timeout"]):
+                report["timings"]["model_startup_seconds"] = start_model(server, runtime)
+            evaluation_started = time.monotonic()
             order = report["planned_order"]
             for offset in range(0, len(order), VARIANTS_PER_PAIR):
                 remaining = deadline - time.monotonic()
@@ -339,10 +432,15 @@ def _run(
                         output / "cells" / f"{index:03d}-{cell['task_id']}-{cell['variant']}"
                     )
                     try:
-                        with context(
-                            task_id=cell["task_id"],
-                            variant=cell["variant"],
-                            candidate_sha256=spec["variants"][cell["variant"]]["sha256"],
+                        with (
+                            time_limit(policy.evaluation_timeout_seconds)
+                            if policy.evaluation_timeout_seconds is not None
+                            else nullcontext(),
+                            context(
+                                task_id=cell["task_id"],
+                                variant=cell["variant"],
+                                candidate_sha256=spec["variants"][cell["variant"]]["sha256"],
+                            ),
                         ):
                             record = run_cell(
                                 root,
@@ -353,7 +451,7 @@ def _run(
                                 submissions[cell["variant"]],
                                 cell,
                                 provenance,
-                                report["controls"][cell["variant"]],
+                                report["control_evidence"],
                             )
                         report["cells"].append(record)
                     except BaseException:
@@ -370,7 +468,18 @@ def _run(
     except BaseException as error:
         failure = error
         report.update(status="failed", error=f"{type(error).__name__}: {error}")
+        if isinstance(error, TimeoutError):
+            report["stop_reason"] = (
+                "evaluation_deadline_exceeded"
+                if evaluation_started is not None
+                else "model_startup_deadline_exceeded"
+                if "cpu_seconds" in report["timings"]
+                else "preparation_deadline_exceeded"
+            )
     finally:
+        if evaluation_started is not None:
+            report["timings"]["evaluation_seconds"] = time.monotonic() - evaluation_started
+        cleanup_started = time.monotonic()
         if server is not None:
             try:
                 stop_model(server)
@@ -378,7 +487,8 @@ def _run(
                 report["cleanup_error"] = f"{type(error).__name__}: {error}"
                 if failure is None:
                     failure = error
-        report["timings"]["total_seconds"] = time.monotonic() - started
+        report["timings"]["cleanup_seconds"] = time.monotonic() - cleanup_started
+        report["timings"]["total_seconds"] = time.monotonic() - job_started
         if failure is not None:
             report["status"] = "failed"
         try:

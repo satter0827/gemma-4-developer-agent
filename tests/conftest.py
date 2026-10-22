@@ -2,8 +2,10 @@ import json
 import shlex
 import shutil
 import sys
+import types
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -11,11 +13,13 @@ from typing import Any
 import pytest
 import yaml
 
-from gemma_agent_dev.common.artifacts import file_hash, inventory, write_json
+from gemma_agent_dev.common.artifacts import content_hash, file_hash, inventory, write_json
 from gemma_agent_dev.diagnostics.config import DiagnosticSettings
 from gemma_agent_dev.diagnostics.local import installed_environment
 from gemma_agent_dev.evaluation import experiment_preparation
+from gemma_agent_dev.evaluation import session as session_module
 from gemma_agent_dev.evaluation.config import RuntimeSettings
+from gemma_agent_dev.notebooks import experiments as bundles
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -305,6 +309,8 @@ def experiment_project(preflight_project: Path) -> Path:
         runtime_config="runtime.json",
         evaluation_config="agent/eval_config.yaml",
     )
+    config["session"]["preparation_timeout_seconds"] = 60
+    config["session"]["evaluation_timeout_seconds"] = 660
     (root / "experiment.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
     return root
 
@@ -316,3 +322,157 @@ def frozen_experiment(experiment_project: Path, monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(experiment_preparation, "verify_quality", quality)
     return experiment_preparation.prepare(experiment_project, Path("experiment.yaml"))
+
+
+session: Any = session_module
+
+
+@pytest.fixture
+def session_fixture(
+    experiment_project: Path, frozen_experiment: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, dict[str, Any], list[str]]:
+    root = experiment_project
+    bundle = root / "bundle"
+    bundles.prepare(root, bundle, report_path=frozen_experiment, verify_only=True, cpu_report=None)
+    from gemma_agent_dev.candidates.archive import extract_archive
+
+    extracted = root / "extracted"
+    extract_archive(bundle / "source-bundle.zip", extracted, 10000000)
+    runtime = json.loads((extracted / "runtime.json").read_text())
+    runtime["paths"]["output"] = str(root / "artifacts/results")
+    runtime["paths"]["data"] = str(root / "data")
+    write_json(extracted / "runtime.json", runtime)
+    spec = json.loads((extracted / "experiment.json").read_text())
+    spec["definition"]["runtime"] = runtime
+    spec["definition_sha256"] = content_hash(spec["definition"])
+    write_json(extracted / "experiment.json", spec)
+    data = root / "data"
+    data.mkdir()
+    (data / "snapshots").mkdir()
+    (data / "tasks.jsonl").write_bytes((root / "tasks.jsonl").read_bytes())
+    (data / "snapshots/fixture_1.tgz").write_bytes(b"fixture snapshot")
+    calls = []
+
+    def module(name: str, **attrs: Any) -> None:
+        for index in range(1, len(name.split(".")) + 1):
+            key = ".".join(name.split(".")[:index])
+            m = types.ModuleType(key)
+            m.__path__ = []
+            monkeypatch.setitem(sys.modules, key, m)
+        for k, v in attrs.items():
+            setattr(sys.modules[name], k, v)
+
+    module(
+        "swegemma.models",
+        load_tasks=lambda p: [
+            SimpleNamespace(
+                instance_id="fixture_1", repo="fixture/repo", patch="fix", test_patch="test"
+            )
+        ],
+    )
+    module(
+        "swegemma.deduplication",
+        resolve_task_snapshot_paths=lambda p, t, r: (data / "snapshots/fixture_1.tgz", None, None),
+    )
+    module("swegemma.config", EvalConfig=lambda **kw: SimpleNamespace(**kw))
+    module("google.adk.agents.context_cache_config", ContextCacheConfig=lambda **kw: kw)
+    module("google.adk.apps._configs", EventsCompactionConfig=lambda **kw: kw)
+    module("litellm")
+    module("torch", cuda=SimpleNamespace(device_count=lambda: 4))
+
+    @dataclass
+    class ServerConfig:
+        cache: bool = False
+
+    class Server:
+        config = ServerConfig()
+        adapter_manifest = None
+        log_path = str(root / "model.log")
+
+        def create_model_registry(self, **kw: Any) -> dict[str, str]:
+            calls.append("registry")
+            return {}
+
+        def start(self) -> None:
+            calls.append("start")
+
+        def stop(self) -> None:
+            calls.append("stop")
+            Path(self.log_path).unlink(missing_ok=True)
+
+    Path(Server.log_path).write_text("server log")
+
+    def create(directory: Path, config: dict[str, Any]) -> Any:
+        assert config["vllm"]["extra_args"] == ["--no-enable-prefix-caching"]
+        calls.append("create")
+        Path(Server.log_path).write_text("server log")
+        return Server()
+
+    monkeypatch.setattr(session, "create_server", create)
+    monkeypatch.setattr(session, "install_wheelhouse", lambda *a, **kw: calls.append("install"))
+    monkeypatch.setattr(
+        "gemma_agent_dev.evaluation.session.importlib.metadata.version",
+        lambda name: runtime["packages"][name],
+    )
+    monkeypatch.setattr(
+        "gemma_agent_dev.evaluation.session.importlib.metadata.distributions",
+        lambda: [
+            SimpleNamespace(metadata={"Name": name}, version=version)
+            for name, version in runtime["packages"].items()
+        ],
+    )
+    monkeypatch.setattr(session, "make_validator", lambda *a: lambda p: calls.append("compile"))
+
+    async def request_contract(sampling: Any) -> Any:
+        return {"generation": sampling}
+
+    monkeypatch.setattr("gemma_agent_dev.evaluation.sdk_worker.request_contract", request_contract)
+
+    async def controls(config: Any, tasks: Any, output: Path, *args: Any) -> bool:
+        calls.append("controls")
+        write_json(output / "origins.json", {"valid": True})
+        write_json(
+            output / "controls.json",
+            [
+                {
+                    "instance_id": task,
+                    "unmodified": {"resolved": False, "error": None},
+                    "reference": {"resolved": True, "error": None},
+                }
+                for task in config.task_ids
+            ],
+        )
+        return True
+
+    monkeypatch.setattr(session, "verify_controls", controls)
+
+    async def evaluate(config: Any, *args: Any) -> Any:
+        calls.append("evaluate")
+        assert len(config.task_ids) == 1
+        task = config.task_ids[0]
+        row = {
+            "instance_id": task,
+            "task_index": 1,
+            "resolved": True,
+            "duration_seconds": 1,
+            "agent_patch_size": 1,
+            "test_exit_code": 0,
+            "error": None,
+        }
+        (config.results_dir / "task_results.jsonl").write_text(json.dumps(row) + "\n")
+        write_json(config.results_dir / "summary.json", {"total_tasks": 1, "resolved": 1})
+        for path, text in {
+            f"logs/{task}.log": "log",
+            f"traces/trace_{task}.json": "{}",
+            f"patches/{task}.patch": "patch",
+            f"test_outputs/{task}.log": "1 passed in 0.01s",
+        }.items():
+            p = config.results_dir / path
+            p.parent.mkdir(exist_ok=True)
+            p.write_text(text)
+        return SimpleNamespace(total=1, resolved=1)
+
+    monkeypatch.setattr(session, "evaluate", evaluate)
+    metadata = json.loads((bundle / "source-manifest.json").read_text())
+    metadata["definition_sha256"] = spec["definition_sha256"]
+    return extracted, metadata, calls

@@ -1,0 +1,44 @@
+experiment_id: easy-focused-verification-v2
+hypothesis: focused-agent-verification-correction
+pool: configs/tasks/easy.yaml
+diagnostic_config: configs/diagnostics/easy-rotation-v2.yaml
+preflight_config: configs/evaluation/preflight-v2.yaml
+runtime_config: configs/evaluation/runtime.yaml
+evaluation_config: configs/evaluation/comparison.yaml
+variants:
+  workflow-v1: agent/workflow-v1.yaml
+  workflow-focused-v2: agent/workflow-focused-v2.yaml
+session:
+  job_timeout_seconds: 10620
+  cleanup_reserve_seconds: 300
+  per_evaluation_overhead_seconds: 60
+  enable_prefix_caching: false
+  quota_hours: 13
+  reserve_hours: 1
+  quota_per_wall_hour: 2
+  max_runs: 2
+  preparation_timeout_seconds: 1200
+  evaluation_timeout_seconds: 660
+change:
+  files:
+  - agent.yaml
+  - prompts/workflow.md
+  - prompts/workflow-focused-v2.md
+  - prompts/analyzer.md
+  - sub_agents/code_analyzer.yaml
+  - configs/sampling.yaml
+  - configs/focused-sampling.yaml
+  - skills/issue-workflow-v2/SKILL.md
+  - skills/issue-workflow-v2/references/verification.md
+  - skills/issue-workflow-v2/scripts/issue_verification_v2.py
+  - skills/issue-workflow-v2/scripts/issue_origins_v2.py
+  - skills/issue-workflow-v2/assets/policy.json
+  - skills/issue-workflow-v2/assets/verification.json
+  agent_fields:
+  - name
+  - instruction
+  - tools
+  - skills
+  - generate_content_config
+  generation_fields:
+  - max_output_tokens

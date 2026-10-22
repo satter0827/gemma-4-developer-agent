@@ -140,6 +140,10 @@ def test_worker_dispatches_only_the_selected_mode(
     calls = []
     module.run = lambda *args, **kwargs: calls.append((args, kwargs))  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, module_name, module)
-    monkeypatch.setattr(sys, "argv", ["worker", str(tmp_path), "{}", "1", str(int(diagnostic))])
+    monkeypatch.setenv("GEMMA_PROCESS_REGISTRY", str(tmp_path / "processes.jsonl"))
+    monkeypatch.setenv("GEMMA_PROCESS_OWNER", "fixture")
+    monkeypatch.setattr(
+        sys, "argv", ["worker", str(tmp_path), '{"job_id":"fixture"}', "1", str(int(diagnostic))]
+    )
     worker.main()
     assert calls and (calls[0][1] == {} if diagnostic else calls[0][1] == {"verify_only": True})

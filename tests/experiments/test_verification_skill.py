@@ -179,15 +179,17 @@ def test_sdk_contract_rejects_changed_execution_semantics(
             if exhausted and fault != "budget":
                 return {"stdout": "", "stderr": exhausted}
             workspace = Path(args[-1][1])
-            changed = (workspace / "src/calc.py").read_text() == "VALUE = 1\n"
-            passed = changed and fault != "wrong-outcome"
+            source = (workspace / "src/calc.py").read_text()
+            changed = source != "VALUE = 0\n"
+            collected = int("def test" in (workspace / "tests/test_calc.py").read_text())
+            passed = changed and source == "VALUE = 1\n" and collected and fault != "wrong-outcome"
             return dict(
                 status="success" if passed else "warning",
                 stdout=json.dumps(
                     dict(
                         status="passed" if passed else "failed",
                         source_changed=changed,
-                        collected=0 if fault == "empty" else 1,
+                        collected=0 if fault == "empty" else collected,
                     )
                 ),
                 stderr="",
@@ -198,13 +200,31 @@ def test_sdk_contract_rejects_changed_execution_semantics(
         AdkSandboxCodeExecutor=lambda **kwargs: SimpleNamespace(**kwargs),
         SubprocessSandbox=lambda **kwargs: SimpleNamespace(**kwargs),
     )
-    module("google.adk.skills", load_skill_from_dir=lambda _: SimpleNamespace())
+    module(
+        "google.adk.skills",
+        load_skill_from_dir=lambda _: SimpleNamespace(
+            frontmatter=SimpleNamespace(name="declared-skill")
+        ),
+    )
     module("google.adk.tools.skill_toolset", _SkillScriptCodeExecutor=Runner)
     module("swegemma.context", SwegemmaContext=Context)
+    from gemma_agent_dev.evaluation import skill_chain
+
+    async def execute(*args: Any) -> dict[str, Any]:
+        return {"status": "passed", "collected": 1}
+
+    monkeypatch.setattr(skill_chain, "execute", execute)
     monkeypatch.setattr(skill_checks, "command", lambda *a, **kw: "")
     if fault == "none":
-        report = skill_checks.run(ROOT / "agent", tmp_path, 30)
+        report = skill_checks.run(
+            ROOT / "agent", tmp_path, 30, skill_path=ROOT / "agent/skills/python-verification-v1"
+        )
         assert report["shared_budget_enforced"] and (tmp_path / "contract.json").exists()
     else:
         with pytest.raises(ValueError):
-            skill_checks.run(ROOT / "agent", tmp_path, 30)
+            skill_checks.run(
+                ROOT / "agent",
+                tmp_path,
+                30,
+                skill_path=ROOT / "agent/skills/python-verification-v1",
+            )

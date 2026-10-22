@@ -8,6 +8,7 @@ from typing import Any
 
 from gemma_agent_dev.common.artifacts import write_json
 from gemma_agent_dev.common.events import logged
+from gemma_agent_dev.common.ownership import isolated_launch
 
 
 @logged("model.start")
@@ -19,7 +20,8 @@ def start_model(server: Any, runtime: dict[str, Any]) -> float:
         raise RuntimeError("Unexpected GPU count")
     litellm.drop_params = True
     started = time.monotonic()
-    server.start()
+    with isolated_launch():
+        server.start()
     return time.monotonic() - started
 
 
@@ -182,22 +184,3 @@ async def verify_controls(
         not record["unmodified"]["resolved"] and record["reference"]["resolved"]
         for record in records
     )
-
-
-def generation_contract(directory: Path) -> list[dict[str, Any]]:
-    """Read every selected LLM node through the pinned SDK's include resolver."""
-    import json
-
-    from adk_submission.yaml_loader import load_yaml
-
-    contracts = {}
-    for path in directory.rglob("*.yaml"):
-        data = load_yaml(path, directory)
-        if isinstance(data, dict) and "model" in data:
-            value = {"model": data["model"], "generation": data.get("generate_content_config")}
-            if value["generation"] is None:
-                raise ValueError("Every experiment agent must declare sampling explicitly")
-            contracts[json.dumps(value, sort_keys=True)] = value
-    if not contracts:
-        raise ValueError("Experiment has no declared LLM agents")
-    return [contracts[key] for key in sorted(contracts)]

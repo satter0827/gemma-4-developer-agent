@@ -98,7 +98,7 @@ def test_explicit_abba_order_and_resolved_definition(experiment_project: Path) -
     assert content_hash(d) == content_hash(json.loads(json.dumps(d)))
     assert "prompts/workflow.md" in d["variants"]["workflow-v1"]
     assert "prompts/verify-v1.md" not in d["variants"]["workflow-v1"]
-    assert experiment.session.pair_seconds(d["evaluation"], 300) == 1140
+    assert experiment.session.pair_seconds(d["evaluation"], 300) == 1620
     budget = experiment.session.budget()
     assert not budget.admit(consumed=2.8303, remaining=20, completed_runs=2, active=False)[
         "allowed"

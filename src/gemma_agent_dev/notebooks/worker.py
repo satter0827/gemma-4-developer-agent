@@ -9,9 +9,43 @@ import time
 from pathlib import Path
 from typing import Any
 
-from gemma_agent_dev.common.artifacts import new_run_id, write_json
+from gemma_agent_dev.common.artifacts import file_hash, new_run_id, write_json
 from gemma_agent_dev.common.events import bundle_session, context, phase
+from gemma_agent_dev.common.ownership import own_subprocesses, stop_owned
 from gemma_agent_dev.common.processes import process_group
+
+
+def seal_sessions(
+    storage: Path, output: Path, provenance: dict[str, Any], receipt: dict[str, Any]
+) -> None:
+    """Seal current-job results only after the worker and its cleanup have finished."""
+    for path in (storage / "results").rglob("session.json"):
+        try:
+            report = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if (
+            not isinstance(report, dict)
+            or not report.get("worker_completion_required")
+            or report.get("job_id") != output.name
+            or report.get("source_sha256") != provenance["source_sha256"]
+        ):
+            continue
+        if receipt["status"] != "completed" and report.get("status") != "failed":
+            report.update(status="failed", phase="watchdog", error=receipt.get("error"))
+        names = {"watchdog.json", "processes.jsonl"}
+        evidence = {}
+        for name in sorted(names):
+            artifact = output / name
+            if artifact.exists():
+                evidence[name] = {
+                    "path": "artifacts/" + artifact.relative_to(storage).as_posix(),
+                    "sha256": file_hash(artifact),
+                }
+        if receipt["status"] == "completed" and set(evidence) != names:
+            raise ValueError("Completed worker is missing process ownership evidence")
+        report["worker_evidence"] = evidence
+        write_json(path, report)
 
 
 def _run_bounded(
@@ -24,6 +58,7 @@ def _run_bounded(
     progress_interval: float,
     storage: Path,
     output: Path,
+    started_at: float | None,
 ) -> None:
     start = time.monotonic()
     receipt: dict[str, Any] = {
@@ -50,7 +85,9 @@ def _run_bounded(
                 env={
                     **os.environ,
                     "PYTHONPATH": str(root / "src"),
+                    "GEMMA_PROCESS_REGISTRY": str(output / "processes.jsonl"),
                     "GEMMA_JOB_DEADLINE_MONOTONIC": str(start + timeout),
+                    "GEMMA_JOB_STARTED_MONOTONIC": str(start if started_at is None else started_at),
                 },
                 stdout=log,
             ) as process:
@@ -93,9 +130,20 @@ def _run_bounded(
         except (OSError, ValueError) as save_error:
             error.add_note(f"Cannot save stopped run: {save_error}")
     finally:
+        try:
+            receipt["stopped_process_groups"] = stop_owned(output / "processes.jsonl", output.name)
+        except (OSError, ValueError) as error:
+            receipt["cleanup_error"] = str(error)
+            if failure is None:
+                failure = error
+            else:
+                failure.add_note(f"Cannot stop owned processes: {error}")
         receipt["duration_seconds"] = time.monotonic() - start
+        if failure is not None:
+            receipt.update(status="failed", error=f"{type(failure).__name__}: {failure}")
         try:
             write_json(output / "watchdog.json", receipt)
+            seal_sessions(storage, output, provenance, receipt)
         except OSError as save_error:
             if failure is None:
                 failure = save_error
@@ -114,6 +162,7 @@ def run_bounded(
     timeout: float,
     progress_interval: float,
     storage: Path,
+    started_at: float | None = None,
 ) -> None:
     output = storage / "jobs" / new_run_id()
     output.mkdir(parents=True)
@@ -132,10 +181,19 @@ def run_bounded(
             progress_interval=progress_interval,
             storage=storage,
             output=output,
+            started_at=started_at,
         )
 
 
 def main() -> None:
+    registry = Path(os.environ["GEMMA_PROCESS_REGISTRY"])
+    provenance = json.loads(sys.argv[2])
+    os.environ["GEMMA_PROCESS_OWNER"] = provenance["job_id"]
+    with own_subprocesses(registry, provenance["job_id"]):
+        dispatch()
+
+
+def dispatch() -> None:
     root = Path(sys.argv[1])
     provenance = json.loads(sys.argv[2])
     if bool(int(sys.argv[-1])):

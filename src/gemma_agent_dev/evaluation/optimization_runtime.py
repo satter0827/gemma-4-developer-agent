@@ -17,6 +17,7 @@ from gemma_agent_dev.common.events import bundle_session, context, event, phase
 from gemma_agent_dev.common.processes import command
 from gemma_agent_dev.evaluation.analysis import (
     SCORABLE_TERMINATIONS,
+    behavior,
     implementation_changed,
     task_evidence,
     termination_reason,
@@ -335,6 +336,7 @@ def execute(
             if not saved.complete or termination not in SCORABLE_TERMINATIONS:
                 raise RuntimeError("Official evaluation failed or did not complete")
             return {
+                **behavior(saved, task, spec["max_artifact_bytes"]),
                 "resolved": row["resolved"],
                 "termination": termination,
                 "implementation_changed": implementation_changed(

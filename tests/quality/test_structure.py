@@ -73,6 +73,7 @@ def test_bundle_hash_covers_launcher_and_is_reproducible(tmp_path: Path) -> None
         "notebooks.entry",
         "notebooks.worker",
         "common.processes",
+        "common.ownership",
         "common.artifacts",
         "common.events",
         "common.config",

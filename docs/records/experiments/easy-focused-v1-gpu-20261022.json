@@ -1,0 +1,309 @@
+{
+  "record_schema_version": 2,
+  "record_id": "easy-focused-v1-gpu-20261022",
+  "experiment_id": "easy-focused-v1",
+  "hypothesis": "focused-agent-composition",
+  "status": "evaluated",
+  "task_ids": [
+    "fastapi_14297",
+    "rich_3944",
+    "requests_6592",
+    "fastapi_14463",
+    "rich_3006",
+    "requests_6589"
+  ],
+  "definition_sha256": "e98303501e01e68e04d43713e1a117ebff5814b1320f2688741d450458b4896b",
+  "source_sha256": "cd258b93c061370d4351b3d1e87d40d3fe6d04b4803e19631a040d61ae7bd460",
+  "candidate_hashes": {
+    "workflow-v1": "411737ddf6b8f774a6edc6825bafa3f7498b121c7bb86c43021eae066f984dfa",
+    "workflow-focused-v1": "dad79aa2e3872b8b236d7d65db07236e3580fb3b037812200671d01d20c22329"
+  },
+  "metrics": {
+    "both": 4,
+    "baseline_only": 1,
+    "candidate_only": 0,
+    "neither": 1,
+    "errors": 0,
+    "incomplete": 0,
+    "not_run": 0,
+    "cell_errors": 0,
+    "bootstrap_seconds": 0.5724690729999793,
+    "dependencies_seconds": 56.24780109300002,
+    "inputs_seconds": 44.806131166,
+    "controls_seconds": 433.142132082,
+    "cpu_seconds": 534.769498888,
+    "model_startup_seconds": 465.5897284340001,
+    "evaluation_seconds": 3834.4684912579996,
+    "cleanup_seconds": 5.975229654000032,
+    "total_seconds": 4848.603475992
+  },
+  "interpretation": "固定6問の全12評価が有効に完了し、基準候補5問、新候補4問で新たな失敗が1問生じた。新候補の採用を保留し基準候補を維持する。独立比較は未実行で、各変更要素の寄与と競技全体の改善率は未確認。",
+  "prompts": [
+    {
+      "prompt_id": "workflow-v1",
+      "path": "agent/prompts/workflow.md",
+      "sha256": "6ec9796d3388e5e08131dbfbbe4636787938f8f73730d583f2c8814f8a32f1d9"
+    },
+    {
+      "prompt_id": "workflow-focused-v1",
+      "path": "agent/prompts/workflow-focused-v1.md",
+      "sha256": "1f39194ca467ecf71a41d7dc88653da93bd886f2579845c4eb51e0a2dc9063e7"
+    }
+  ],
+  "observations": [
+    {
+      "submission_count": 0,
+      "nonempty_submission_then_empty_final": false,
+      "first_implementation_edit_trace_call": 13,
+      "skill_script_calls": 0,
+      "task_id": "fastapi_14297",
+      "variant": "workflow-v1",
+      "run_id": "20261022T070506Z-0067b0ef-000-fastapi_14297-workflow-v1",
+      "resolved": true,
+      "duration_seconds": 308.18,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "submission_count": 0,
+      "nonempty_submission_then_empty_final": false,
+      "first_implementation_edit_trace_call": 8,
+      "skill_script_calls": 0,
+      "task_id": "fastapi_14297",
+      "variant": "workflow-focused-v1",
+      "run_id": "20261022T070506Z-0067b0ef-001-fastapi_14297-workflow-focused-v1",
+      "resolved": true,
+      "duration_seconds": 308.07,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "submission_count": 0,
+      "nonempty_submission_then_empty_final": false,
+      "first_implementation_edit_trace_call": null,
+      "skill_script_calls": 0,
+      "task_id": "rich_3944",
+      "variant": "workflow-v1",
+      "run_id": "20261022T070506Z-0067b0ef-003-rich_3944-workflow-v1",
+      "resolved": false,
+      "duration_seconds": 301.14,
+      "status": "completed",
+      "termination": "time_limit_reached",
+      "implementation_changed": null,
+      "tool_argument_errors": 0
+    },
+    {
+      "submission_count": null,
+      "nonempty_submission_then_empty_final": null,
+      "first_implementation_edit_trace_call": null,
+      "skill_script_calls": null,
+      "task_id": "rich_3944",
+      "variant": "workflow-focused-v1",
+      "run_id": "20261022T070506Z-0067b0ef-002-rich_3944-workflow-focused-v1",
+      "resolved": false,
+      "duration_seconds": 301.02,
+      "status": "completed",
+      "termination": "time_limit_reached",
+      "implementation_changed": null,
+      "tool_argument_errors": null
+    },
+    {
+      "submission_count": 4,
+      "nonempty_submission_then_empty_final": false,
+      "first_implementation_edit_trace_call": 8,
+      "skill_script_calls": 0,
+      "task_id": "requests_6592",
+      "variant": "workflow-v1",
+      "run_id": "20261022T070506Z-0067b0ef-004-requests_6592-workflow-v1",
+      "resolved": true,
+      "duration_seconds": 344.33,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "submission_count": 2,
+      "nonempty_submission_then_empty_final": false,
+      "first_implementation_edit_trace_call": 8,
+      "skill_script_calls": 0,
+      "task_id": "requests_6592",
+      "variant": "workflow-focused-v1",
+      "run_id": "20261022T070506Z-0067b0ef-005-requests_6592-workflow-focused-v1",
+      "resolved": true,
+      "duration_seconds": 403.06,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "submission_count": 0,
+      "nonempty_submission_then_empty_final": false,
+      "first_implementation_edit_trace_call": 7,
+      "skill_script_calls": 0,
+      "task_id": "fastapi_14463",
+      "variant": "workflow-v1",
+      "run_id": "20261022T070506Z-0067b0ef-007-fastapi_14463-workflow-v1",
+      "resolved": true,
+      "duration_seconds": 308.13,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "submission_count": 0,
+      "nonempty_submission_then_empty_final": false,
+      "first_implementation_edit_trace_call": 7,
+      "skill_script_calls": 0,
+      "task_id": "fastapi_14463",
+      "variant": "workflow-focused-v1",
+      "run_id": "20261022T070506Z-0067b0ef-006-fastapi_14463-workflow-focused-v1",
+      "resolved": false,
+      "duration_seconds": 308.27,
+      "status": "completed",
+      "termination": "time_limit_reached",
+      "implementation_changed": true,
+      "tool_argument_errors": 13
+    },
+    {
+      "submission_count": 1,
+      "nonempty_submission_then_empty_final": false,
+      "first_implementation_edit_trace_call": 7,
+      "skill_script_calls": 0,
+      "task_id": "rich_3006",
+      "variant": "workflow-v1",
+      "run_id": "20261022T070506Z-0067b0ef-008-rich_3006-workflow-v1",
+      "resolved": true,
+      "duration_seconds": 132.57,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "submission_count": 2,
+      "nonempty_submission_then_empty_final": false,
+      "first_implementation_edit_trace_call": 8,
+      "skill_script_calls": 0,
+      "task_id": "rich_3006",
+      "variant": "workflow-focused-v1",
+      "run_id": "20261022T070506Z-0067b0ef-009-rich_3006-workflow-focused-v1",
+      "resolved": true,
+      "duration_seconds": 303.85,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 3
+    },
+    {
+      "submission_count": 0,
+      "nonempty_submission_then_empty_final": false,
+      "first_implementation_edit_trace_call": 12,
+      "skill_script_calls": 0,
+      "task_id": "requests_6589",
+      "variant": "workflow-v1",
+      "run_id": "20261022T070506Z-0067b0ef-011-requests_6589-workflow-v1",
+      "resolved": true,
+      "duration_seconds": 403.26,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    },
+    {
+      "submission_count": 1,
+      "nonempty_submission_then_empty_final": false,
+      "first_implementation_edit_trace_call": 17,
+      "skill_script_calls": 0,
+      "task_id": "requests_6589",
+      "variant": "workflow-focused-v1",
+      "run_id": "20261022T070506Z-0067b0ef-010-requests_6589-workflow-focused-v1",
+      "resolved": true,
+      "duration_seconds": 403.29,
+      "status": "completed",
+      "termination": "completed",
+      "implementation_changed": true,
+      "tool_argument_errors": 0
+    }
+  ],
+  "conditions": {
+    "max_tool_calls": 30,
+    "max_time_minutes": 5,
+    "max_turns": 50,
+    "sdk_version": "0.2.11",
+    "verification_timeout_seconds": 300,
+    "max_model_len": 32768,
+    "generation": {
+      "workflow-v1": [
+        {
+          "model": "gemma-4-31b-it-qat-w4a16-ct",
+          "generation": {
+            "temperature": 0.2,
+            "top_p": 0.95,
+            "max_output_tokens": 16384,
+            "thinking_config": {
+              "thinking_budget": 4096,
+              "include_thoughts": true
+            },
+            "seed": 0
+          }
+        }
+      ],
+      "workflow-focused-v1": [
+        {
+          "model": "gemma-4-31b-it-qat-w4a16-ct",
+          "generation": {
+            "temperature": 0.2,
+            "top_p": 0.95,
+            "max_output_tokens": 8192,
+            "thinking_config": {
+              "thinking_budget": 4096,
+              "include_thoughts": true
+            },
+            "seed": 0
+          }
+        }
+      ]
+    },
+    "evaluation_timeout_seconds": 660
+  },
+  "quota_hours": null,
+  "decision": "inconclusive",
+  "parent_candidates": {
+    "workflow-v1": "workflow-v1",
+    "workflow-focused-v1": "workflow-v1"
+  },
+  "assessments": [
+    {
+      "category": "tool",
+      "certainty": "confirmed",
+      "basis": "新たな失敗のfastapi_14463では必須引数が欠けた編集呼び出しが13回続き、修正本体を反映できなかった。"
+    },
+    {
+      "category": "verification",
+      "certainty": "confirmed",
+      "basis": "確認可能な新候補5件でSkillスクリプトの呼び出しは0回。1件は複数呼び出しと観測の対応が曖昧で未確認。"
+    },
+    {
+      "category": "verification",
+      "certainty": "confirmed",
+      "basis": "評価した候補の検証スクリプトに、同一ディレクトリのテストのみの変更を実装変更と扱う誤成功をCPUで再現した。"
+    },
+    {
+      "category": "budget",
+      "certainty": "confirmed",
+      "basis": "全12評価を4848.60秒で完了し、評価全体の期限超過と基盤側の未完了は0件。"
+    },
+    {
+      "category": "tool",
+      "certainty": "unknown",
+      "basis": "ツール解析前のモデル出力がないため、不正な引数を生成とパーサーのどちらが生んだかは未確定。"
+    }
+  ]
+}

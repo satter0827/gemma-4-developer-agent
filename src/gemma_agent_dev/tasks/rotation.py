@@ -69,15 +69,8 @@ def plan(root: Path, config: Path) -> dict[str, Any]:
         raise ValueError("Not enough unused tuning tasks; explicit reuse needs a new plan")
     definition = experiment.definition(root)
     runtime, evaluation = definition["runtime"], definition["evaluation"]
-    pair_seconds = (
-        experiment.session.pair_seconds(evaluation, runtime["verification_timeout_seconds"])
-        - experiment.session.cleanup_reserve_seconds
-    )
-    upper = (
-        runtime["vllm"]["startup_timeout"]
-        + len(selected) * pair_seconds
-        + experiment.session.cleanup_reserve_seconds
-    )
+    completion = experiment.session.completion(evaluation, runtime, len(selected))
+    upper = completion["known_upper_seconds"]
     estimates = []
     for record in records:
         metrics = record["metrics"]
@@ -86,17 +79,22 @@ def plan(root: Path, config: Path) -> dict[str, Any]:
                 metrics["model_startup_seconds"]
                 + metrics["evaluation_seconds"]
                 / len(record["task_ids"])
+                / len(record["candidate_hashes"])
                 * len(selected)
                 * VARIANTS_PER_PAIR
                 + experiment.session.cleanup_reserve_seconds
             )
+            preparation = metrics.get("cpu_seconds")
+            total = None if preparation is None else seconds + preparation
             estimates.append(
                 {
                     "record_id": record["record_id"],
-                    "wall_seconds": seconds,
-                    "quota_hours": seconds
-                    / SECONDS_PER_HOUR
-                    * experiment.session.quota_per_wall_hour,
+                    "known_wall_seconds": seconds,
+                    "preparation_seconds": preparation,
+                    "wall_seconds": total,
+                    "quota_hours": None
+                    if total is None
+                    else total / SECONDS_PER_HOUR * experiment.session.quota_per_wall_hour,
                 }
             )
     return {
@@ -109,10 +107,14 @@ def plan(root: Path, config: Path) -> dict[str, Any]:
         "confirmation_tasks_used": [],
         "cost_kind": "estimate",
         "startup_and_evaluation_upper_seconds": upper,
-        "cpu_setup_seconds": None,
-        "fits_without_cpu_setup_at_upper_bound": upper <= experiment.session.job_timeout_seconds,
-        "quota_upper_without_cpu_setup_hours": upper
-        / SECONDS_PER_HOUR
-        * experiment.session.quota_per_wall_hour,
+        "startup_and_evaluation_estimated_seconds": completion["known_estimated_seconds"],
+        "cpu_setup_seconds": completion["preparation_seconds"],
+        "completion_budget": completion,
+        "fits_without_cpu_setup_at_upper_bound": None
+        if upper is None
+        else upper <= experiment.session.job_timeout_seconds,
+        "quota_upper_without_cpu_setup_hours": None
+        if upper is None
+        else upper / SECONDS_PER_HOUR * experiment.session.quota_per_wall_hour,
         "historical_extrapolations": estimates,
     }

@@ -14,6 +14,7 @@ import yaml
 
 from gemma_agent_dev.candidates.archive import (
     extract_archive,
+    generation_contract,
     referenced_files,
     validate_references,
 )
@@ -129,7 +130,8 @@ class PreflightSettings:
         diagnostics = DiagnosticSettings.load(root, data["diagnostic_config"])
         if diagnostics.runtime.as_dict() != runtime.as_dict():
             raise ValueError("Preflight and diagnostic runtime settings differ")
-        SamplingSettings.load(data["agent_dir"] / "configs/sampling.yaml", runtime)
+        for contract in generation_contract(data["agent_dir"], data["agent_config"]):
+            SamplingSettings.parse(contract["generation"], runtime)
         if data["task_selection"] is not None:
             from gemma_agent_dev.diagnostics.qualification import load_selection
 
@@ -201,10 +203,7 @@ def run(root: Path, config: Path, profile: str) -> Path:
         "purpose": settings.purpose,
         "execution": {
             "evaluation": EvaluationSettings.load(settings.evaluation_config).as_dict(),
-            "sampling": SamplingSettings.load(
-                settings.agent_dir / "configs/sampling.yaml",
-                RuntimeSettings.load(settings.runtime_config),
-            ).__dict__,
+            "generation": generation_contract(settings.agent_dir, settings.agent_config),
             "model_source": RuntimeSettings.load(settings.runtime_config).model_source,
         },
         "status": "running",
@@ -253,6 +252,9 @@ def verify_quality(settings: PreflightSettings, output: Path) -> None:
 
 @logged("candidate.freeze")
 def freeze_candidate(settings: PreflightSettings, output: Path) -> dict[str, str]:
+    runtime = RuntimeSettings.load(settings.runtime_config)
+    for contract in generation_contract(settings.agent_dir, settings.agent_config):
+        SamplingSettings.parse(contract["generation"], runtime)
     with tempfile.TemporaryDirectory(dir=output) as temporary:
         staging = Path(temporary)
         extracted = staging / "archive"

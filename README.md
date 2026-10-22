@@ -25,3 +25,5 @@ make cli ARGS='--help'
 競技データと準備済みCPU環境を使う操作は[環境の準備](docs/operations/setup.md)、課題の再検証は[パッチ診断](docs/operations/diagnostics.md)、候補の固定と結果確認は[評価手順](docs/operations/evaluation.md)を参照してください。開発時は[コーディング規約](docs/coding-standards.md)に従います。
 
 通常の品質検査と事前検証はKaggle実行・正式提出を開始しません。定期提出の有効化と認証設定は[提出手順](docs/operations/submission.md)で明示的に行います。
+
+日常の比較準備・パッチ診断・結果整理・候補準備は[開発フロー](docs/operations/workflows.md)を参照してください。開発AI用の`gemma-dev-workflows` Skillも同じCLIを使用します。

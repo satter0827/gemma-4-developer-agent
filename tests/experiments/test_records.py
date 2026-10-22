@@ -229,7 +229,12 @@ def test_reviewed_export_uses_frozen_numbers_and_path_specific_prompts(
         records,
         "summarize",
         lambda *a, **kw: dict(
-            status="completed", counts={"both": 0}, cell_errors=0, observations=[], quota_hours=None
+            status="completed",
+            counts={"both": 0},
+            cell_errors=0,
+            observations=[],
+            quota_hours=None,
+            timings={"cpu_seconds": 10, "private_metadata": 1},
         ),
     )
     saved: list[dict[str, Any]] = []

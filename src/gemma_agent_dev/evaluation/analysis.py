@@ -3,7 +3,7 @@
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from gemma_agent_dev.common.artifacts import file_hash, new_run_id, write_json
 from gemma_agent_dev.common.events import LABEL, context, event
@@ -108,6 +108,14 @@ def emit_tool_events(run: Run, task_id: str, max_bytes: int) -> None:
 
 TEST_STATUSES = ("passed", "failed", "errors", "skipped", "xfailed", "xpassed")
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+NON_IMPLEMENTATION_PATH = re.compile(
+    r"(?:^|/)(?:tests?(?:/|_)|conftest\.py$|(?:repro|reproduce|scratch|tmp)[^/]*(?:/|$))"
+    r"|(?:^|/)[^/]+_test\.py$|(?:^|/)(?:__pycache__|\.pytest_cache)(?:/|$)|\.pyc$"
+)
+
+
+def implementation_path(name: str) -> bool:
+    return not NON_IMPLEMENTATION_PATH.search(name)
 
 
 def reported_test_counts(text: str) -> dict[str, int | None] | None:
@@ -164,6 +172,9 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
         "individual_test_counts": None,
         "official_tool_calls": row.get("tool_calls") if row else None,
         "first_edit_attempt_trace_call": None,
+        "first_implementation_edit_seconds": None,
+        "status_checks": [],
+        "skill_verifications": [],
         "first_implementation_edit_trace_call": None,
         "scratch_edit_attempts": [],
         "unknown_edit_targets": [],
@@ -205,6 +216,22 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
             for call in step_calls:
                 calls += 1
                 name = call["function_name"]
+                if name == "get_status":
+                    result["status_checks"].append(
+                        {
+                            "trace_call": calls,
+                            "elapsed_seconds": step.get("extra", {}).get("elapsed_s"),
+                            "observation": observed,
+                        }
+                    )
+                if name == "run_skill_script":
+                    result["skill_verifications"].append(
+                        {
+                            "trace_call": calls,
+                            "elapsed_seconds": step.get("extra", {}).get("elapsed_s"),
+                            "observation": observed,
+                        }
+                    )
                 if name == "submit_patch":
                     result["reported_patch_submissions"].append(
                         {"trace_call": calls, "observation": observed}
@@ -221,11 +248,12 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
                         result["unknown_edit_targets"].append(calls)
                     elif re.search(r"(?:^|/)(?:repro|reproduce|scratch|tmp)[^/]*\.py$", target):
                         result["scratch_edit_attempts"].append(calls)
-                    elif target.endswith(".py") and not re.search(
-                        r"(?:^|/)(?:tests?/|test_)", target
-                    ):
+                    elif implementation_path(target):
                         if result["first_implementation_edit_trace_call"] is None:
                             result["first_implementation_edit_trace_call"] = calls
+                            result["first_implementation_edit_seconds"] = step.get("extra", {}).get(
+                                "elapsed_s"
+                            )
                     else:
                         result["unknown_edit_targets"].append(calls)
                     if observed.get("status") == "error" or observed.get("error"):
@@ -263,6 +291,62 @@ def task_evidence(run: Run, task_id: str, max_bytes: int) -> dict[str, Any]:
     return result
 
 
+class Behavior(TypedDict):
+    submission_count: int | None
+    nonempty_submission_then_empty_final: bool | None
+    first_implementation_edit_trace_call: int | None
+    skill_script_calls: int | None
+
+
+def unknown_behavior() -> Behavior:
+    return {
+        "submission_count": None,
+        "nonempty_submission_then_empty_final": None,
+        "first_implementation_edit_trace_call": None,
+        "skill_script_calls": None,
+    }
+
+
+BEHAVIOR_FIELDS = frozenset(
+    {
+        "submission_count",
+        "nonempty_submission_then_empty_final",
+        "first_implementation_edit_trace_call",
+        "skill_script_calls",
+    }
+)
+
+
+def behavior(run: Run, task: str, max_bytes: int) -> Behavior:
+    """Export only observable, bounded behavior; absent traces remain unknown."""
+    evidence = task_evidence(run, task, max_bytes)
+    if evidence["trace_error"] is not None or evidence["ambiguous_tool_observations"]:
+        return unknown_behavior()
+    submissions = evidence["reported_patch_submissions"]
+    row = run.rows.get(task, {})
+    final_size = row.get("agent_patch_size")
+    nonempty = any(
+        type(item["observation"].get("patch_size")) is int and item["observation"]["patch_size"] > 0
+        for item in submissions
+    )
+    unknown_submission = any(
+        type(item["observation"].get("patch_size")) is not int for item in submissions
+    )
+    trace = json.loads(read_artifact(run, f"traces/trace_{task}.json", max_bytes))
+    return {
+        "submission_count": len(submissions),
+        "nonempty_submission_then_empty_final": (nonempty and final_size == 0)
+        if type(final_size) is int and (final_size != 0 or nonempty or not unknown_submission)
+        else None,
+        "first_implementation_edit_trace_call": evidence["first_implementation_edit_trace_call"],
+        "skill_script_calls": sum(
+            call["function_name"] == "run_skill_script"
+            for step in trace["steps"]
+            for call in step.get("tool_calls", [])
+        ),
+    }
+
+
 def actual_task_order(run: Run) -> list[str] | None:
     """Use the official task indices; selected IDs do not define SDK execution order."""
     if run.kind != "evaluation" or not run.complete:
@@ -286,13 +370,7 @@ def implementation_changed(run: Run, task: str, max_bytes: int) -> bool | None:
     names = re.findall(r"^(?:\+\+\+ b/|--- a/)(.+)$", text, re.M)
     if not names:
         return None
-    return any(
-        name.endswith((".py", ".pyi"))
-        and not re.search(
-            r"(?:^|/)(?:tests?(?:/|_)|(?:repro|reproduce|scratch|tmp)[^/]*\.py$)", name
-        )
-        for name in names
-    )
+    return any(implementation_path(name) for name in names)
 
 
 def analyze(run: Run, output_root: Path, max_bytes: int, other: Run | None = None) -> Path:
