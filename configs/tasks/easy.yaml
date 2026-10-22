@@ -100,7 +100,7 @@ uses:
   - rich_3278
 - experiment_id: easy-skills-v3
   purpose: tuning
-  task_ids:
+  task_ids: &id001
   - fastapi_14297
   - rich_3944
   - requests_6592
@@ -116,3 +116,36 @@ uses:
   - fastapi_14479
   - requests_7433
   - rich_3278
+- experiment_id: easy-completion-v1
+  purpose: tuning
+  task_ids:
+  - fastapi_14297
+  - rich_3944
+  - requests_6592
+  - fastapi_14463
+  - rich_3006
+  - requests_6589
+- experiment_id: easy-skill-use-v1
+  purpose: tuning
+  task_ids:
+  - fastapi_14297
+  - rich_3944
+  - requests_6592
+  - fastapi_14463
+  - rich_3006
+  - requests_6589
+- experiment_id: easy-focused-v1
+  purpose: tuning
+  task_ids: *id001
+- experiment_id: easy-focused-confirmation-v1
+  purpose: confirmation
+  task_ids:
+  - fastapi_13537
+  - rich_3882
+  - requests_6644
+  - fastapi_15589
+  - rich_3894
+  - requests_6629
+- experiment_id: easy-focused-verification-v2
+  purpose: tuning
+  task_ids: *id001

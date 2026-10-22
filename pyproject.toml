@@ -75,7 +75,7 @@ max_bytes = 10485760
 backup_count = 3
 
 [tool.architecture]
-gpu_free_roles = ["core", "settings", "diagnostic", "local", "cli", "quality", "operations"]
+gpu_free_roles = ["core", "settings", "diagnostic", "local", "cli", "quality", "operations", "workflow"]
 inference_imports = ["torch", "litellm", "swegemma", "adk_submission", "adk_eval_core", "google.adk"]
 numeric_parameters = ["timeout", "startup_timeout", "max_bytes", "concurrency", "retries", "max_attempts"]
 
@@ -85,6 +85,8 @@ numeric_parameters = ["timeout", "startup_timeout", "max_bytes", "concurrency", 
 
 [tool.architecture.modules]
 core = [
+  "gemma_agent_dev.workflows",
+  "gemma_agent_dev.workflows.records",
   "gemma_agent_dev.evaluation.experiment_results",
   "gemma_agent_dev.evaluation.optimization_limits",
   "gemma_agent_dev.evaluation.optimization_candidates",
@@ -111,6 +113,7 @@ core = [
   "gemma_agent_dev.candidates.packaging",
   "gemma_agent_dev.common.junit",
   "gemma_agent_dev.common.processes",
+  "gemma_agent_dev.common.ownership",
   "gemma_agent_dev.diagnostics.origins",
   "gemma_agent_dev.evaluation.analysis",
   "gemma_agent_dev.evaluation.budget",
@@ -126,6 +129,7 @@ settings = [
 connection = [
   "gemma_agent_dev.evaluation.optimization_engine",
   "gemma_agent_dev.evaluation.skill_checks",
+  "gemma_agent_dev.evaluation.skill_chain",
   "gemma_agent_dev.evaluation.tracking_worker",
   "gemma_agent_dev.evaluation.sequential_checks",
   "gemma_agent_dev.evaluation.official",
@@ -150,6 +154,7 @@ local = [
   "gemma_agent_dev.evaluation.tracking",
   "gemma_agent_dev.notebooks.experiments",
   "gemma_agent_dev.candidates.preflight",
+  "gemma_agent_dev.candidates.quality",
   "gemma_agent_dev.notebooks.evaluation",
   "gemma_agent_dev.notebooks.bundle",
   "gemma_agent_dev.notebooks.diagnostics",
@@ -162,6 +167,7 @@ operations = [
   "gemma_agent_dev.submission.store",
   "gemma_agent_dev.submission.state",
 ]
+workflow = ["gemma_agent_dev.workflows.service", "gemma_agent_dev.workflows.transfer"]
 remote = [
   "gemma_agent_dev.evaluation.optimization_runtime",
   "gemma_agent_dev.evaluation.optimization_validation",
@@ -173,6 +179,7 @@ remote = [
   "gemma_agent_dev.notebooks.worker",
 ]
 cli = [
+  "gemma_agent_dev.workflows.cli",
   "gemma_agent_dev.evaluation.experiments_cli",
   "gemma_agent_dev.cli",
   "gemma_agent_dev.notebooks.cli",
@@ -198,7 +205,8 @@ operations = ["core", "settings", "connection", "operations"]
 diagnostic = ["core", "settings", "diagnostic"]
 local = ["core", "settings", "diagnostic", "local"]
 remote = ["core", "connection", "remote"]
-cli = ["core", "settings", "diagnostic", "local", "operations", "connection", "cli"]
+workflow = ["core", "settings", "diagnostic", "local", "operations", "connection"]
+cli = ["core", "settings", "diagnostic", "local", "operations", "connection", "cli", "workflow"]
 entry = ["remote"]
 quality = ["quality"]
 

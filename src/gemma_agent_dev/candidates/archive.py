@@ -57,12 +57,13 @@ def validate_references(root: Path) -> dict[str, str]:
     return files
 
 
-def referenced_files(root: Path, entry: Path) -> dict[str, str]:
+def resolve_agent(root: Path, entry: Path) -> tuple[dict[str, str], list[dict[str, Any]]]:
     """Resolve only the selected agent's transitive inputs inside its source tree."""
     root = root.resolve()
     active: set[Path] = set()
     complete: set[Path] = set()
     references: set[Path] = set()
+    agents: list[dict[str, Any]] = []
 
     def checked(path: Path) -> Path:
         if path.is_symlink() or not path.resolve().is_relative_to(root) or not path.is_file():
@@ -92,6 +93,8 @@ def referenced_files(root: Path, entry: Path) -> dict[str, str]:
 
             def visit(item: Any) -> None:
                 if isinstance(item, dict):
+                    if "model" in item:
+                        agents.append(item)
                     for key, child in item.items():
                         if key == "config_path":
                             if not isinstance(child, str):
@@ -144,4 +147,33 @@ def referenced_files(root: Path, entry: Path) -> dict[str, str]:
             active.remove(path)
 
     load(entry)
-    return {p.relative_to(root).as_posix(): file_hash(p) for p in sorted(references)}
+    return {p.relative_to(root).as_posix(): file_hash(p) for p in sorted(references)}, agents
+
+
+def referenced_files(root: Path, entry: Path) -> dict[str, str]:
+    return resolve_agent(root, entry)[0]
+
+
+def generation_contract(root: Path, entry: Path | None = None) -> list[dict[str, Any]]:
+    """Resolve generation only for LLM nodes reachable from the selected root."""
+    import json
+
+    contracts = {}
+    for agent in resolve_agent(root, entry or root / "agent.yaml")[1]:
+        value = {"model": agent["model"], "generation": agent.get("generate_content_config")}
+        if not isinstance(value["generation"], dict):
+            raise ValueError("Every selected LLM must declare generation settings")
+        contracts[json.dumps(value, sort_keys=True)] = value
+    if not contracts:
+        raise ValueError("No selected LLM agents")
+    return [contracts[key] for key in sorted(contracts)]
+
+
+def declared_skills(root: Path) -> list[Path]:
+    return sorted(
+        {
+            root / skill
+            for agent in resolve_agent(root, root / "agent.yaml")[1]
+            for skill in agent.get("skills", [])
+        }
+    )

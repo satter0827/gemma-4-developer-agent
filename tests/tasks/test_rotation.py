@@ -37,6 +37,7 @@ def planner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, list
             task_ids=["fastapi_4", "rich_4", "requests_4"],
             metrics={"model_startup_seconds": 100, "evaluation_seconds": 300},
             record_id="old",
+            candidate_hashes={"baseline": "hash"},
             observations=[
                 {"task_id": "rich_4", "run_id": "run", "status": "completed", "resolved": False},
                 {"task_id": "requests_4", "run_id": None, "status": "not_run", "resolved": None},
@@ -67,7 +68,17 @@ def test_rotation_is_unused_first_and_independent_of_scores(planner: Any) -> Non
     assert "rich_4" not in first["task_ids"] and "fastapi_2" not in first["task_ids"]
     assert first["attempted"] == first["completed"] == ["rich_4"]
     assert first["cpu_setup_seconds"] is None and first["confirmation_tasks_used"] == []
-    assert first["historical_extrapolations"][0]["wall_seconds"] == 1600
+    assert first["startup_and_evaluation_upper_seconds"] is None
+    assert first["fits_without_cpu_setup_at_upper_bound"] is None
+    assert first["quota_upper_without_cpu_setup_hours"] is None
+    assert first["startup_and_evaluation_estimated_seconds"] > 0
+    estimate = first["historical_extrapolations"][0]
+    assert estimate["known_wall_seconds"] == 1600
+    assert estimate["wall_seconds"] is None and estimate["quota_hours"] is None
+    records[0]["metrics"]["cpu_seconds"] = 30
+    assert rotation.plan(path.parent, path)["historical_extrapolations"][0]["wall_seconds"] == 1630
+    records[0]["candidate_hashes"]["candidate"] = "hash2"
+    assert rotation.plan(path.parent, path)["historical_extrapolations"][0]["wall_seconds"] == 1030
 
 
 def test_started_task_without_a_saved_run_is_not_unused(planner: Any) -> None:

@@ -233,7 +233,11 @@ class SamplingSettings:
 
     @classmethod
     def load(cls, path: Path, runtime: RuntimeSettings) -> "SamplingSettings":
-        data = mapping(yaml.safe_load(path.read_text()), {f.name for f in fields(cls)}, "sampling")
+        return cls.parse(yaml.safe_load(path.read_text()), runtime)
+
+    @classmethod
+    def parse(cls, raw: Any, runtime: RuntimeSettings) -> "SamplingSettings":
+        data = mapping(raw, {f.name for f in fields(cls)}, "sampling")
         positive(data["top_p"], "top_p")
         temperature = data["temperature"]
         if (

@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 from gemma_agent_dev.common.config import mapping
-from gemma_agent_dev.evaluation.analysis import SCORABLE_TERMINATIONS
+from gemma_agent_dev.evaluation.analysis import BEHAVIOR_FIELDS, SCORABLE_TERMINATIONS
 from gemma_agent_dev.evaluation.session_policy import VARIANTS_PER_PAIR
 from gemma_agent_dev.tasks.pools import identifier
 
@@ -34,6 +34,8 @@ CONDITION_FIELDS = frozenset(
         "max_turns",
         "verification_timeout_seconds",
         "max_model_len",
+        "generation",
+        "evaluation_timeout_seconds",
     }
 )
 OBSERVATION_FIELDS = frozenset(
@@ -101,7 +103,35 @@ def validate_extra(row: dict[str, Any]) -> None:
     if not isinstance(conditions, dict) or not conditions or set(conditions) - CONDITION_FIELDS:
         raise ValueError("Unexpected public conditions")
     for key, value in conditions.items():
-        if key in {"model", "sdk_version"}:
+        if key == "generation":
+            if not isinstance(value, dict) or set(value) != set(row["candidate_hashes"]):
+                raise ValueError("Generation evidence must identify every candidate")
+            for contracts in value.values():
+                if not isinstance(contracts, list) or not contracts:
+                    raise ValueError("Expected effective LLM generation contracts")
+                for contract in contracts:
+                    mapping(contract, {"model", "generation"}, "LLM contract")
+                    generation = mapping(
+                        contract["generation"],
+                        {"temperature", "top_p", "seed", "max_output_tokens", "thinking_config"},
+                        "generation",
+                    )
+                    if not isinstance(contract["model"], str) or not contract["model"]:
+                        raise ValueError("Expected declared model")
+                    for name in ("temperature", "top_p", "seed", "max_output_tokens"):
+                        if not finite(generation[name]):
+                            raise ValueError("Invalid public sampling value")
+                    thinking = mapping(
+                        generation["thinking_config"],
+                        {"thinking_budget", "include_thoughts"},
+                        "thinking",
+                    )
+                    if (
+                        not finite(thinking["thinking_budget"])
+                        or type(thinking["include_thoughts"]) is not bool
+                    ):
+                        raise ValueError("Invalid public thinking value")
+        elif key in {"model", "sdk_version"}:
             if not isinstance(value, str) or not value or any(c.isspace() for c in value):
                 raise ValueError("Invalid public model or SDK version")
         elif not finite(value):
@@ -110,7 +140,15 @@ def validate_extra(row: dict[str, Any]) -> None:
         raise ValueError("Expected task observations")
     seen = set()
     for item in row["observations"]:
-        mapping(item, set(OBSERVATION_FIELDS), "task observation")
+        extra = BEHAVIOR_FIELDS if set(item) & BEHAVIOR_FIELDS else frozenset()
+        mapping(item, set(OBSERVATION_FIELDS | extra), "task observation")
+        for field in extra:
+            value = item[field]
+            expected = bool if field == "nonempty_submission_then_empty_final" else int
+            if value is not None and (
+                type(value) is not expected or (expected is int and value < 0)
+            ):
+                raise ValueError("Invalid behavioral observation")
         pair = item["task_id"], item["variant"]
         if pair in seen or pair[0] not in row["task_ids"] or pair[1] not in row["candidate_hashes"]:
             raise ValueError("Duplicate or foreign task observation")

@@ -32,6 +32,7 @@ def test_entry_extracts_and_cleans_sources_inside_artifacts(
     monkeypatch.setenv("TMPDIR", str(tmp_path))
 
     def bounded(root: Path, provenance: dict[str, Any], **kwargs: Any) -> None:
+        assert isinstance(kwargs["started_at"], float)
         run(root, provenance, verify_only=kwargs["verify_only"])
 
     monkeypatch.setattr("gemma_agent_dev.notebooks.worker.run_bounded", bounded)

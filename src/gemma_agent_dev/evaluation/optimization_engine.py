@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from gemma_agent_dev.common.events import context, event
-from gemma_agent_dev.evaluation.analysis import SCORABLE_TERMINATIONS
+from gemma_agent_dev.evaluation.analysis import BEHAVIOR_FIELDS, SCORABLE_TERMINATIONS
 from gemma_agent_dev.evaluation.optimization_limits import SearchBudget
 
 GEPA_VERSION = "0.1.4"
@@ -29,10 +29,17 @@ class SearchOutcome:
     termination: str
     implementation_changed: bool | None
     tool_argument_errors: int | None
+    submission_count: int | None = None
+    nonempty_submission_then_empty_final: bool | None = None
+    first_implementation_edit_trace_call: int | None = None
+    skill_script_calls: int | None = None
 
     @classmethod
     def parse(cls, value: Any) -> "SearchOutcome":
-        if not isinstance(value, dict) or set(value) != set(cls.__dataclass_fields__):
+        if not isinstance(value, dict) or set(value) not in (
+            set(cls.__dataclass_fields__),
+            set(cls.__dataclass_fields__) - BEHAVIOR_FIELDS,
+        ):
             raise ValueError("Invalid optimization evaluation outcome")
         if type(value["resolved"]) is not bool or value["termination"] not in SCORABLE_TERMINATIONS:
             raise RuntimeError("Infrastructure errors or incomplete evaluations cannot be scored")
@@ -44,6 +51,11 @@ class SearchOutcome:
         errors = value["tool_argument_errors"]
         if errors is not None and (type(errors) is not int or errors < 0):
             raise ValueError("Invalid tool error count")
+        for field in BEHAVIOR_FIELDS:
+            item = value.get(field)
+            expected = bool if field == "nonempty_submission_then_empty_final" else int
+            if item is not None and (type(item) is not expected or (expected is int and item < 0)):
+                raise ValueError("Invalid optimization behavior")
         return cls(**value)
 
     def feedback(self) -> dict[str, Any]:

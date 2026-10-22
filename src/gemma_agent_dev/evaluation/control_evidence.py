@@ -5,11 +5,51 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from gemma_agent_dev.common.artifacts import file_hash, inventory, write_json
+from gemma_agent_dev.common.artifacts import content_hash, file_hash, inventory, write_json
 from gemma_agent_dev.common.junit import validate_test_evidence
 from gemma_agent_dev.diagnostics.origins import validate_origins
 
 CONTROL_LABELS = ("unmodified", "reference")
+
+
+def control_identity(report: dict[str, Any]) -> str:
+    """Identify test controls independently of candidate prompts and adapters."""
+    runtime = report["runtime_config"]
+    return content_hash(
+        {
+            "task_ids": report["task_ids"],
+            "inputs": report["evidence_inputs"],
+            "sdk": report["sdk_packages"],
+            "wheelhouse": runtime["wheelhouse_hashes"],
+            "engine": report["control_engine"],
+            "environment": report["environment"],
+            "verification_seconds": runtime["verification_timeout_seconds"],
+            "evaluation": report["definition"]["evaluation"],
+        }
+    )
+
+
+def session_controls(path: Path, report: dict[str, Any], variant: str) -> dict[str, str]:
+    """Verify a shared receipt, or inspect an immutable historical variant receipt."""
+    if "control_evidence" in report:
+        receipt = report["control_evidence"]
+        if (
+            set(receipt) != {"directory", "condition_sha256", "files"}
+            or receipt["directory"] != "controls/shared"
+            or receipt["condition_sha256"] != control_identity(report)
+        ):
+            raise ValueError("Shared control conditions changed")
+        files = receipt["files"]
+        directory = path.parent / receipt["directory"]
+        if inventory(directory) != files:
+            raise ValueError("Shared control artifacts changed")
+    else:
+        if set(report.get("controls", {})) != set(report["variants"]):
+            raise ValueError("Missing candidate control evidence")
+        files = report["controls"][variant]
+        directory = path.parent / "controls" / variant
+    verify_saved_controls(directory, files, report["task_ids"])
+    return dict(files)
 
 
 def validate_control_set(report: dict[str, Any], ids: list[str]) -> None:
