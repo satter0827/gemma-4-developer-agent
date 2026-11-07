@@ -13,7 +13,7 @@ from gemma_agent_dev.candidates.evidence import (
 )
 from gemma_agent_dev.common.artifacts import content_hash, file_hash
 from gemma_agent_dev.evaluation.analysis import SCORABLE_TERMINATIONS
-from gemma_agent_dev.evaluation.control_evidence import verify_saved_controls
+from gemma_agent_dev.evaluation.control_evidence import session_controls
 from gemma_agent_dev.evaluation.experiment_results import load_cpu, summarize
 
 
@@ -74,13 +74,10 @@ def qualify_experiment(
         or "evidence_inputs" not in report
         or cpu.get("evidence_inputs") != report["evidence_inputs"]
         or cpu.get("sdk_packages") != report["sdk_packages"]
-        or set(report["controls"]) != set(report["variants"])
     ):
         raise ValueError("CPU/GPU experiment inputs differ")
     for name in report["variants"]:
-        verify_saved_controls(
-            gpu_path.parent / "controls" / name, report["controls"][name], report["task_ids"]
-        )
+        session_controls(gpu_path, report, name)
         saved_archive(cpu_path, cpu, name)
         saved_archive(gpu_path, report, name)
     archive = saved_archive(gpu_path, report, variant)

@@ -1,168 +1,15 @@
 import json
 import sys
-import types
-from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from gemma_agent_dev.common.artifacts import content_hash, file_hash, write_json
+from gemma_agent_dev.common.artifacts import file_hash, write_json
 from gemma_agent_dev.evaluation import session as session_module
 from gemma_agent_dev.evaluation.experiment_results import load_cpu, summarize
-from gemma_agent_dev.notebooks import experiments as bundles
 
 session: Any = session_module
-
-
-@pytest.fixture
-def session_fixture(
-    experiment_project: Path, frozen_experiment: Path, monkeypatch: pytest.MonkeyPatch
-) -> tuple[Path, dict[str, Any], list[str]]:
-    root = experiment_project
-    bundle = root / "bundle"
-    bundles.prepare(root, bundle, report_path=frozen_experiment, verify_only=True, cpu_report=None)
-    from gemma_agent_dev.candidates.archive import extract_archive
-
-    extracted = root / "extracted"
-    extract_archive(bundle / "source-bundle.zip", extracted, 10000000)
-    runtime = json.loads((extracted / "runtime.json").read_text())
-    runtime["paths"]["output"] = str(root / "artifacts/results")
-    runtime["paths"]["data"] = str(root / "data")
-    write_json(extracted / "runtime.json", runtime)
-    spec = json.loads((extracted / "experiment.json").read_text())
-    spec["definition"]["runtime"] = runtime
-    spec["definition_sha256"] = content_hash(spec["definition"])
-    write_json(extracted / "experiment.json", spec)
-    data = root / "data"
-    data.mkdir()
-    (data / "snapshots").mkdir()
-    (data / "tasks.jsonl").write_bytes((root / "tasks.jsonl").read_bytes())
-    (data / "snapshots/fixture_1.tgz").write_bytes(b"fixture snapshot")
-    calls = []
-
-    def module(name: str, **attrs: Any) -> None:
-        for index in range(1, len(name.split(".")) + 1):
-            key = ".".join(name.split(".")[:index])
-            m = types.ModuleType(key)
-            m.__path__ = []
-            monkeypatch.setitem(sys.modules, key, m)
-        for k, v in attrs.items():
-            setattr(sys.modules[name], k, v)
-
-    module(
-        "swegemma.models",
-        load_tasks=lambda p: [
-            SimpleNamespace(
-                instance_id="fixture_1", repo="fixture/repo", patch="fix", test_patch="test"
-            )
-        ],
-    )
-    module(
-        "swegemma.deduplication",
-        resolve_task_snapshot_paths=lambda p, t, r: (data / "snapshots/fixture_1.tgz", None, None),
-    )
-    module("swegemma.config", EvalConfig=lambda **kw: SimpleNamespace(**kw))
-    module("google.adk.agents.context_cache_config", ContextCacheConfig=lambda **kw: kw)
-    module("google.adk.apps._configs", EventsCompactionConfig=lambda **kw: kw)
-    module("litellm")
-    module("torch", cuda=SimpleNamespace(device_count=lambda: 4))
-
-    @dataclass
-    class ServerConfig:
-        cache: bool = False
-
-    class Server:
-        config = ServerConfig()
-        adapter_manifest = None
-        log_path = str(root / "model.log")
-
-        def create_model_registry(self, **kw: Any) -> dict[str, str]:
-            calls.append("registry")
-            return {}
-
-        def start(self) -> None:
-            calls.append("start")
-
-        def stop(self) -> None:
-            calls.append("stop")
-            Path(self.log_path).unlink(missing_ok=True)
-
-    Path(Server.log_path).write_text("server log")
-
-    def create(directory: Path, config: dict[str, Any]) -> Any:
-        assert config["vllm"]["extra_args"] == ["--no-enable-prefix-caching"]
-        calls.append("create")
-        Path(Server.log_path).write_text("server log")
-        return Server()
-
-    monkeypatch.setattr(session, "create_server", create)
-    monkeypatch.setattr(session, "install_wheelhouse", lambda *a: calls.append("install"))
-    monkeypatch.setattr(
-        "gemma_agent_dev.evaluation.session.importlib.metadata.version",
-        lambda name: runtime["packages"][name],
-    )
-    monkeypatch.setattr(
-        "gemma_agent_dev.evaluation.session.importlib.metadata.distributions",
-        lambda: [
-            SimpleNamespace(metadata={"Name": name}, version=version)
-            for name, version in runtime["packages"].items()
-        ],
-    )
-    monkeypatch.setattr(
-        session, "generation_contract", lambda *a: [{"model": "same", "sampling": "same"}]
-    )
-    monkeypatch.setattr(session, "make_validator", lambda *a: lambda p: calls.append("compile"))
-
-    async def controls(config: Any, tasks: Any, output: Path, *args: Any) -> bool:
-        calls.append("controls")
-        write_json(output / "origins.json", {"valid": True})
-        write_json(
-            output / "controls.json",
-            [
-                {
-                    "instance_id": task,
-                    "unmodified": {"resolved": False, "error": None},
-                    "reference": {"resolved": True, "error": None},
-                }
-                for task in config.task_ids
-            ],
-        )
-        return True
-
-    monkeypatch.setattr(session, "verify_controls", controls)
-
-    async def evaluate(config: Any, *args: Any) -> Any:
-        calls.append("evaluate")
-        assert len(config.task_ids) == 1
-        task = config.task_ids[0]
-        row = {
-            "instance_id": task,
-            "task_index": 1,
-            "resolved": True,
-            "duration_seconds": 1,
-            "agent_patch_size": 1,
-            "test_exit_code": 0,
-            "error": None,
-        }
-        (config.results_dir / "task_results.jsonl").write_text(json.dumps(row) + "\n")
-        write_json(config.results_dir / "summary.json", {"total_tasks": 1, "resolved": 1})
-        for path, text in {
-            f"logs/{task}.log": "log",
-            f"traces/trace_{task}.json": "{}",
-            f"patches/{task}.patch": "patch",
-            f"test_outputs/{task}.log": "1 passed in 0.01s",
-        }.items():
-            p = config.results_dir / path
-            p.parent.mkdir(exist_ok=True)
-            p.write_text(text)
-        return SimpleNamespace(total=1, resolved=1)
-
-    monkeypatch.setattr(session, "evaluate", evaluate)
-    metadata = json.loads((bundle / "source-manifest.json").read_text())
-    metadata["definition_sha256"] = spec["definition_sha256"]
-    return extracted, metadata, calls
 
 
 def test_one_server_and_independent_cells(session_fixture: Any) -> None:
@@ -172,6 +19,8 @@ def test_one_server_and_independent_cells(session_fixture: Any) -> None:
     assert report["status"] == "completed"
     assert calls.count("start") == calls.count("stop") == calls.count("create") == 1
     assert calls.count("evaluate") == 2 and calls.count("compile") == 2
+    assert calls.count("controls") == 1
+    assert report["control_evidence"]["directory"] == "controls/shared"
     assert calls.count("registry") == 4
     assert report["actual_order"] == report["planned_order"]
     assert len({c["manifest"] for c in report["cells"]}) == 2
@@ -320,6 +169,25 @@ def test_cpu_proof_checks_artifacts_and_bundle_identity(
         report["task_ids"],
         report["variants"],
     )
+    report["cpu_worker_completion_required"] = True
+    write_json(path, report)
+    with pytest.raises(ValueError, match="cleanup"):
+        load_cpu(
+            path,
+            provenance["source_sha256"],
+            provenance["definition_sha256"],
+            report["task_ids"],
+            report["variants"],
+        )
+    report["cpu_worker_completed"] = True
+    write_json(path, report)
+    load_cpu(
+        path,
+        provenance["source_sha256"],
+        provenance["definition_sha256"],
+        report["task_ids"],
+        report["variants"],
+    )
     with pytest.raises(ValueError):
         load_cpu(
             path, "changed", provenance["definition_sha256"], report["task_ids"], report["variants"]
@@ -388,7 +256,12 @@ def test_inline_sampling_difference_blocks_shared_model(
     monkeypatch.setattr(
         session,
         "generation_contract",
-        lambda p: [{"temperature": 0.2 if p.name == "workflow-v1" else 0.3}],
+        lambda p: [
+            {
+                "model": "same",
+                "generation": {"temperature": 0.2 if p.name == "workflow-v1" else 0.3},
+            }
+        ],
     )
     with pytest.raises(ValueError, match="identical adapters"):
         session.run(root, provenance)
@@ -481,3 +354,49 @@ def test_paired_registration_uses_original_archive_and_validates_all_evidence(
         candidate = qualify_experiment(cpu, gpu, variant, source, 10000000)
         assert candidate["evidence"]["kind"] == "paired-experiment"
         assert candidate["archive_sha256"] == file_hash(root / variant / "submission.zip")
+
+
+@pytest.mark.parametrize("phase", ["model_startup", "evaluation"])
+def test_complete_stage_deadline_stops_the_session_and_preserves_missing_score(
+    session_fixture: Any, monkeypatch: pytest.MonkeyPatch, phase: str
+) -> None:
+    import asyncio
+    import time
+
+    from gemma_agent_dev.common.artifacts import content_hash
+
+    root, provenance, calls = session_fixture
+    runtime = json.loads((root / "runtime.json").read_text())
+    spec = json.loads((root / "experiment.json").read_text())
+    if phase == "evaluation":
+        spec["definition"]["session"]["evaluation_timeout_seconds"] = 1
+
+        async def slow(*args: Any) -> Any:
+            await asyncio.sleep(2)
+
+        monkeypatch.setattr(session, "evaluate", slow)
+    else:
+        runtime["vllm"]["startup_timeout"] = 1
+        write_json(root / "runtime.json", runtime)
+        spec["definition"]["runtime"] = runtime
+        original = session.create_server
+
+        def create(*args: Any) -> Any:
+            server = original(*args)
+            server.start = lambda: time.sleep(2)
+            return server
+
+        monkeypatch.setattr(session, "create_server", create)
+    spec["definition_sha256"] = content_hash(spec["definition"])
+    write_json(root / "experiment.json", spec)
+    with pytest.raises(TimeoutError):
+        session.run(root, provenance)
+    path = next(Path(runtime["paths"]["output"]).glob("*/session.json"))
+    report = json.loads(path.read_text())
+    assert report["status"] == "failed" and report["stop_reason"] == phase + "_deadline_exceeded"
+    assert calls[-1] == "stop"
+    if phase == "evaluation":
+        result = summarize(path, max_bytes=2000000)
+        assert result["counts"]["incomplete"] == 1 and result["counts"]["neither"] == 0
+        assert all(item["resolved"] is None for item in result["observations"])
+        assert len(report["actual_order"]) == 1

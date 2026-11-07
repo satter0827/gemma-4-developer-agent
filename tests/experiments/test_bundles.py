@@ -126,13 +126,50 @@ def test_verify_local_uses_fixed_cpu_sdk_and_read_only_input(
         assert "-m" in args and "session_worker" in args[2]
         bindings = json.loads(args[-1])
         assert set(bindings) == {"data", "output", "native_controls"}
-        return "CPU verified\n" + str(proof)
+        return json.dumps({"kind": "experiment-verification-receipt", "manifest": str(proof)})
 
     monkeypatch.setattr(bundles, "command", command)
     assert bundles.verify_local(root, bundle, Path("sdk.yaml")) == proof
+    monkeypatch.setattr(bundles, "command", lambda *a, **kw: "CPU verified\n" + str(proof))
+    with pytest.raises(ValueError):
+        bundles.verify_local(root, bundle, Path("sdk.yaml"))
     (bundle / "source-bundle.zip").write_bytes(b"changed")
     with pytest.raises(ValueError, match="bundle changed"):
         bundles.verify_local(root, bundle, Path("sdk.yaml"))
     monkeypatch.setattr(bundles, "installed_state", lambda *a: {"changed": True})
     with pytest.raises(ValueError, match="environment changed"):
         bundles.verify_local(root, bundle, Path("sdk.yaml"))
+
+
+def test_local_cpu_payload_does_not_render_a_remote_notebook(
+    frozen_experiment: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from gemma_agent_dev.notebooks import experiments
+
+    root = frozen_experiment.parents[3]
+    destination = root / "local-cpu"
+
+    def forbidden(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("Local CPU proof must not inherit the remote notebook source limit")
+
+    monkeypatch.setattr(experiments, "write_notebook", forbidden)
+    digest = experiments.prepare(
+        root,
+        destination,
+        report_path=frozen_experiment,
+        verify_only=True,
+        cpu_report=None,
+        local_only=True,
+    )
+    assert (destination / "source-bundle.zip").is_file()
+    assert json.loads((destination / "source-manifest.json").read_text())["source_sha256"] == digest
+    assert not (destination / "run.py").exists()
+    with pytest.raises(ValueError, match="remote launch"):
+        experiments.prepare(
+            root,
+            root / "bad-local",
+            report_path=frozen_experiment,
+            verify_only=False,
+            cpu_report=None,
+            local_only=True,
+        )

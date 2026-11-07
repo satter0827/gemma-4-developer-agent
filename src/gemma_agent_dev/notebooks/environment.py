@@ -14,7 +14,12 @@ from gemma_agent_dev.common.events import logged
 
 @logged("dependencies.install")
 def install_wheelhouse(
-    directory: Path, output: Path, startup_timeout: int, expected: dict[str, str]
+    directory: Path,
+    output: Path,
+    startup_timeout: int,
+    expected: dict[str, str],
+    *,
+    preparation_timeout: float | None = None,
 ) -> None:
     environment = {
         "LITELLM_LOCAL_MODEL_COST_MAP": "True",
@@ -58,6 +63,7 @@ def install_wheelhouse(
                 *map(str, sorted(staging.glob("*.whl"))),
             ],
             check=True,
+            timeout=preparation_timeout,
         )
     finally:
         shutil.rmtree(staging)

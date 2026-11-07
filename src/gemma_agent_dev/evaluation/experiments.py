@@ -1,6 +1,6 @@
 """Validate immutable experiments and deterministic paired execution plans."""
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -112,7 +112,7 @@ class Experiment:
             },
             "runtime": runtime,
             "evaluation": EvaluationSettings.load(self.evaluation_config).as_dict(),
-            "session": asdict(self.session),
+            "session": self.session.as_dict(),
         }
         if self.change is not None:
             definition["change"] = self.change.as_dict()

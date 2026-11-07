@@ -88,7 +88,9 @@ def test_runtime_checks_prepare_is_separate_and_normal_check_is_offline(
         runtime_checks.check(root, path)
 
 
-@pytest.mark.parametrize("fault", ["none", "seed", "budget", "retention", "disabled"])
+@pytest.mark.parametrize(
+    "fault", ["none", "seed", "budget", "retention", "disabled", "output", "temperature"]
+)
 def test_cpu_request_contract_rejects_changed_wire_behavior(
     monkeypatch: pytest.MonkeyPatch, fault: str
 ) -> None:
@@ -109,6 +111,9 @@ def test_cpu_request_contract_rejects_changed_wire_behavior(
             config = request.config.__dict__
             thinking = config["thinking_config"]
             kwargs = {
+                "temperature": 0.3 if fault == "temperature" else config["temperature"],
+                "top_p": config["top_p"],
+                "max_completion_tokens": 1 if fault == "output" else config["max_output_tokens"],
                 "seed": 1 if fault == "seed" else config["seed"],
                 "extra_body": {
                     "chat_template_kwargs": {"enable_thinking": thinking["thinking_budget"] > 0},
@@ -155,7 +160,7 @@ def test_cpu_request_contract_rejects_changed_wire_behavior(
             "include_thoughts": False if fault == "disabled" else True,
         },
     }
-    if fault in {"seed", "budget", "retention"}:
+    if fault in {"seed", "budget", "retention", "output", "temperature"}:
         with pytest.raises(ValueError):
             asyncio.run(request_contract(sampling))
     else:

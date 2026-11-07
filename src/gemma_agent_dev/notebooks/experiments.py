@@ -38,7 +38,10 @@ def prepare(
     cpu_report: Path | None,
     quota: dict[str, Any] | None = None,
     bundle_dataset: str | None = None,
+    local_only: bool = False,
 ) -> str:
+    if local_only and (not verify_only or bundle_dataset is not None):
+        raise ValueError("Local CPU bundles cannot declare a remote launch")
     experiment, report = load_preparation(root, report_path)
     diagnostic = DiagnosticSettings.load(root, experiment.diagnostic_config)
     catalog = TaskCatalog.load(root, diagnostic.catalog_path)
@@ -73,6 +76,9 @@ def prepare(
     content, paths = build_payload(root, EXPERIMENT_MODULES, inputs)
     digest = hashlib.sha256(content).hexdigest()
     if not verify_only:
+        experiment.session.require_completion(
+            spec["definition"]["evaluation"], runtime, len(experiment.task_ids)
+        )
         if cpu_report is None:
             raise ValueError("GPU experiments require exact-bundle CPU proof")
         load_cpu(
@@ -93,16 +99,19 @@ def prepare(
         "definition_sha256": report["definition_sha256"],
         "preparation_sha256": file_hash(report_path),
     }
-    write_notebook(
-        destination,
-        content,
-        provenance,
-        runtime,
-        runtime["verification_kernel_id"] if verify_only else runtime["kernel_id"],
-        verify_only=verify_only,
-        diagnostic=False,
-        bundle_dataset=bundle_dataset,
-    )
+    if local_only:
+        destination.mkdir(parents=True)
+    else:
+        write_notebook(
+            destination,
+            content,
+            provenance,
+            runtime,
+            runtime["verification_kernel_id"] if verify_only else runtime["kernel_id"],
+            verify_only=verify_only,
+            diagnostic=False,
+            bundle_dataset=bundle_dataset,
+        )
     (destination / "source-bundle.zip").write_bytes(content)
     write_json(
         destination / "source-manifest.json",
@@ -175,7 +184,13 @@ def verify_local(root: Path, bundle: Path, sdk_config: Path) -> Path:
             },
             timeout=spec["definition"]["session"]["job_timeout_seconds"],
         )
-        report_path = Path(result.strip().splitlines()[-1])
+        response = json.loads(result)
+        if (
+            set(response) != {"kind", "manifest"}
+            or response["kind"] != "experiment-verification-receipt"
+        ):
+            raise ValueError("Expected a structured experiment verification receipt")
+        report_path = Path(response["manifest"])
     load_cpu(
         report_path,
         metadata["source_sha256"],

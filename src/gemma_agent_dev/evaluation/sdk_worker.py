@@ -70,7 +70,19 @@ async def request_contract(sampling: dict[str, Any]) -> dict[str, Any]:
     retained = any(m.get("reasoning") == "retained thought" for m in outgoing["messages"])
     if retained != thinking["include_thoughts"] or not responses:
         raise ValueError("SDK changed thought retention or returned no response")
-    return {"seed": outgoing["seed"], "extra_body": body, "retained_thoughts": retained}
+    fields = {
+        "temperature": "temperature",
+        "top_p": "top_p",
+        "max_output_tokens": "max_completion_tokens",
+    }
+    if any(outgoing.get(wire) != sampling[name] for name, wire in fields.items()):
+        raise ValueError("SDK changed generation parameters")
+    return {
+        "seed": outgoing["seed"],
+        "extra_body": body,
+        "retained_thoughts": retained,
+        "generation": {name: outgoing[wire] for name, wire in fields.items()},
+    }
 
 
 def run(runtime_path: Path, sampling_path: Path, output: Path) -> None:

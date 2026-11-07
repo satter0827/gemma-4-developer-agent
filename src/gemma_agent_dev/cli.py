@@ -1,6 +1,7 @@
 """Route explicit feature commands without performing work during import."""
 
 import argparse
+import json
 import subprocess
 import sys
 
@@ -14,11 +15,13 @@ from gemma_agent_dev.evaluation import experiments_cli as experiments
 from gemma_agent_dev.notebooks import cli as notebooks
 from gemma_agent_dev.submission import cli as submission
 from gemma_agent_dev.tasks import cli as tasks
+from gemma_agent_dev.workflows import cli as workflows
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="提出コードの準備と評価結果の確認")
     commands = parser.add_subparsers(dest="command", required=True)
+    workflows.configure(commands)
     tasks.configure(commands)
     diagnostics.configure(commands)
     evaluation.configure(commands)
@@ -26,7 +29,15 @@ def main(argv: list[str] | None = None) -> int:
     candidates.configure(commands)
     notebooks.configure(commands)
     submission.configure(commands)
-    args = parser.parse_args(argv)
+    arguments = sys.argv[1:] if argv is None else argv
+    workflow_json = arguments[:1] == ["workflow"] and "--json" in arguments
+    try:
+        args = parser.parse_args(arguments)
+    except SystemExit as error:
+        if not workflow_json or error.code == 0:
+            raise
+        print(json.dumps(workflows.failure("arguments", "invalid_arguments")))
+        return int(error.code or 2)
     try:
         root = project_root()
         execution_id = new_run_id()
@@ -46,4 +57,6 @@ def main(argv: list[str] | None = None) -> int:
         subprocess.SubprocessError,
     ) as error:
         print(f"処理できません：{error}", file=sys.stderr)
+        if workflow_json:
+            print(json.dumps(workflows.failure(args.workflow_action, type(error).__name__)))
         return 1

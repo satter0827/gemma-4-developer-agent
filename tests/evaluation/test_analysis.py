@@ -13,6 +13,42 @@ from gemma_agent_dev.evaluation.results import load_run
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.parametrize("mode", ["lost", "retained", "unknown", "ambiguous", "absent"])
+def test_common_behavior_keeps_missing_and_ambiguous_observations_unknown(
+    make_run: Any, mode: str
+) -> None:
+    path = make_run()
+    rows_path = path / "task_results.jsonl"
+    rows = [json.loads(line) for line in rows_path.read_text().splitlines()]
+    rows[0]["agent_patch_size"] = 5 if mode == "retained" else 0
+    rows_path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    observation = {} if mode == "unknown" else {"status": "ok", "patch_size": 12}
+    submit = {"function_name": "submit_patch", "arguments": {}}
+    steps = [
+        {
+            "tool_calls": [{"function_name": "edit_file", "arguments": {"path": "src/a.py"}}],
+            "observation": {"content": '{"status":"ok"}'},
+        },
+        {
+            "tool_calls": [submit, submit] if mode == "ambiguous" else [submit],
+            "observation": {"content": json.dumps(observation)},
+        },
+        {"tool_calls": [{"function_name": "run_skill_script", "arguments": {}}]},
+    ]
+    if mode != "absent":
+        (path / "traces").mkdir()
+        write_json(path / "traces/trace_task_a.json", {"steps": steps})
+    result = analysis.behavior(load_run(path), "task_a", 10000)
+    if mode in {"absent", "ambiguous"}:
+        assert result == analysis.unknown_behavior()
+    else:
+        assert result["submission_count"] == 1 and result["skill_script_calls"] == 1
+        assert result["first_implementation_edit_trace_call"] == 1
+        assert result["nonempty_submission_then_empty_final"] is (
+            None if mode == "unknown" else mode == "lost"
+        )
+
+
 def test_analyze_separates_official_result_from_trace_claims_and_keeps_unknowns(
     make_run: Any, tmp_path: Path
 ) -> None:
@@ -307,3 +343,62 @@ def test_scratch_files_and_argument_failures_are_not_source_repairs(
     assert evidence["scratch_edit_attempts"] == [1] and len(evidence["tool_argument_errors"]) == 1
     assert evidence["stage_authors"] == ["repair_agent", "verify_agent"]
     assert len(evidence["edit_failures"]) == 1 and len(evidence["verification_commands"]) == 1
+
+
+def test_phase_times_use_official_trace_elapsed_field(make_run: Any) -> None:
+    path = make_run()
+    (path / "traces").mkdir()
+    steps = []
+    for elapsed, name, args in [
+        (10, "get_status", {}),
+        (20, "edit_file", {"filepath": "src/template.html"}),
+        (30, "run_skill_script", {}),
+    ]:
+        steps.append(
+            {
+                "tool_calls": [{"function_name": name, "arguments": args}],
+                "extra": {"elapsed_s": elapsed},
+                "observation": {"content": "{}"},
+            }
+        )
+    write_json(path / "traces/trace_task_a.json", {"steps": steps})
+    evidence = analysis.task_evidence(load_run(path), "task_a", 10000)
+    assert evidence["first_implementation_edit_seconds"] == 20
+    assert evidence["status_checks"][0]["elapsed_seconds"] == 10
+    assert evidence["skill_verifications"][0]["elapsed_seconds"] == 30
+
+
+@pytest.mark.parametrize(
+    "name,changed",
+    [
+        ("src/calc_test.py", False),
+        ("src/test_calc.py", False),
+        ("src/conftest.py", False),
+        ("src/repro.json", False),
+        ("src/__pycache__/calc.pyc", False),
+        ("src/template.html", True),
+    ],
+)
+def test_edit_positions_and_retained_patches_share_implementation_classification(
+    make_run: Any, name: str, changed: bool
+) -> None:
+    path = make_run()
+    (path / "traces").mkdir()
+    (path / "patches").mkdir()
+    (path / "patches/task_a.patch").write_text(f"--- a/{name}\n+++ b/{name}\n")
+    write_json(
+        path / "traces/trace_task_a.json",
+        {
+            "steps": [
+                {
+                    "tool_calls": [{"function_name": "edit_file", "arguments": {"path": name}}],
+                    "observation": {"content": '{"status":"ok"}'},
+                }
+            ]
+        },
+    )
+    run = load_run(path)
+    assert analysis.implementation_changed(run, "task_a", 10000) is changed
+    assert analysis.task_evidence(run, "task_a", 10000)["first_implementation_edit_trace_call"] == (
+        1 if changed else None
+    )

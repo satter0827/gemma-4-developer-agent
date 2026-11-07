@@ -3,18 +3,22 @@
 import copy
 import json
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any
 
+from gemma_agent_dev.candidates.archive import generation_contract
 from gemma_agent_dev.candidates.changes import ChangeScope, validate_change
 from gemma_agent_dev.common.artifacts import content_hash, file_hash, inventory
 from gemma_agent_dev.common.events import load_health
 from gemma_agent_dev.evaluation.analysis import (
     SCORABLE_TERMINATIONS,
+    Behavior,
+    behavior,
     implementation_changed,
     task_evidence,
     termination_reason,
+    unknown_behavior,
 )
-from gemma_agent_dev.evaluation.control_evidence import verify_saved_controls
+from gemma_agent_dev.evaluation.control_evidence import session_controls
 from gemma_agent_dev.evaluation.results import (
     comparison_differences,
     load_run,
@@ -23,7 +27,7 @@ from gemma_agent_dev.evaluation.results import (
 from gemma_agent_dev.evaluation.session_policy import VARIANTS_PER_PAIR
 
 
-class TaskObservation(TypedDict):
+class TaskObservation(Behavior):
     task_id: str
     variant: str
     run_id: str | None
@@ -33,6 +37,41 @@ class TaskObservation(TypedDict):
     termination: str
     implementation_changed: bool | None
     tool_argument_errors: int | None
+
+
+def validate_worker_completion(path: Path, report: dict[str, Any]) -> None:
+    if not report.get("worker_completion_required"):
+        return
+    evidence = report.get("worker_evidence", {})
+    if report.get("status") != "completed" and set(evidence) != {
+        "watchdog.json",
+        "processes.jsonl",
+    }:
+        return
+    job = report.get("job_id")
+    if not isinstance(job, str) or Path(job).name != job or job in {"", ".", ".."} or "\\" in job:
+        raise ValueError("Invalid worker identity")
+    if set(evidence) != {"watchdog.json", "processes.jsonl"}:
+        raise ValueError("Worker completion evidence is missing")
+    artifact_root = path.parent.parent.parent
+    for name, item in evidence.items():
+        expected = f"artifacts/jobs/{job}/{name}"
+        if item.get("path") != expected:
+            raise ValueError("Worker evidence belongs to another job")
+        target = artifact_root.parent / expected
+        if file_hash(target) != item["sha256"]:
+            raise ValueError("Worker completion evidence changed")
+    receipt = json.loads((artifact_root / "jobs" / job / "watchdog.json").read_text())
+    if any(
+        receipt.get("provenance", {}).get(key) != report.get(key)
+        for key in ("job_id", "source_sha256", "definition_sha256")
+        if key in report
+    ):
+        raise ValueError("Worker completion identity changed")
+    if report["status"] == "completed" and (
+        receipt.get("status") != "completed" or receipt.get("cleanup_error")
+    ):
+        raise ValueError("Worker cleanup did not complete")
 
 
 def validate_inputs(report: dict[str, Any]) -> None:
@@ -68,11 +107,13 @@ def observation(
             "termination": "unknown",
             "implementation_changed": None,
             "tool_argument_errors": None,
+            **unknown_behavior(),
         }
     row = run.rows.get(task)
     evidence = task_evidence(run, task, max_bytes)
     termination = termination_reason(run, task, evidence)
     return {
+        **behavior(run, task, max_bytes),
         "task_id": task,
         "variant": variant,
         "run_id": run.manifest["run_id"],
@@ -91,6 +132,7 @@ def summarize(path: Path, *, max_bytes: int) -> dict[str, Any]:
     session = json.loads(path.read_text())
     if session.get("kind") != "experiment-session":
         raise ValueError("Expected an agent experiment, not CPU verification")
+    validate_worker_completion(path, session)
     planned = session["planned_order"]
     definition = session.get("definition")
     if definition is not None:
@@ -104,6 +146,10 @@ def summarize(path: Path, *, max_bytes: int) -> dict[str, Any]:
             validate_inputs(session)
         candidate_files = session["candidate_files"]
         folders = {name: path.parent / "submissions" / name for name in session["variants"]}
+        if "generation" in session and session["generation"] != {
+            name: generation_contract(folder) for name, folder in folders.items()
+        }:
+            raise ValueError("Recorded generation differs from the evaluated candidates")
         if "change" in definition:
             if any(inventory(folder) != candidate_files[name] for name, folder in folders.items()):
                 raise ValueError("Frozen candidate evidence changed")
@@ -118,6 +164,9 @@ def summarize(path: Path, *, max_bytes: int) -> dict[str, Any]:
         raise ValueError("Invalid paired execution plan")
     if session["actual_order"] != planned[: len(session["actual_order"])]:
         raise ValueError("Actual order disagrees with the frozen plan")
+    if "control_evidence" in session:
+        for variant in variants:
+            session_controls(path, session, variant)
     cells = {}
     run_ids: set[str] = set()
     for cell in session["cells"]:
@@ -158,6 +207,11 @@ def summarize(path: Path, *, max_bytes: int) -> dict[str, Any]:
                 "source_setup": {task: inputs["sources"][task]},
                 "runtime_config": session["runtime_config"],
                 "evaluation": definition["evaluation"],
+                **(
+                    {"generation": session["generation"][cell["variant"]]}
+                    if "generation" in session
+                    else {}
+                ),
                 "verification_timeout_seconds": definition["runtime"][
                     "verification_timeout_seconds"
                 ],
@@ -172,6 +226,11 @@ def summarize(path: Path, *, max_bytes: int) -> dict[str, Any]:
                 or run.manifest.get("job_id") != session.get("job_id")
             ):
                 raise ValueError("Cell inputs differ from the frozen session")
+        if (
+            "control_evidence" in session
+            and run.manifest.get("controls") != session["control_evidence"]
+        ):
+            raise ValueError("Cell shared controls differ from session")
         cells[key] = run
     observations = {
         (task, variant): observation(
@@ -233,6 +292,8 @@ def summarize(path: Path, *, max_bytes: int) -> dict[str, Any]:
         ),
         "observations": list(observations.values()),
         "quota_hours": session.get("quota_hours"),
+        "timings": session.get("timings", {}),
+        "model_preparation": session.get("model_preparation"),
     }
 
 
@@ -247,11 +308,16 @@ def load_cpu(
         or report.get("definition_sha256") != definition_hash
         or report.get("task_ids") != task_ids
         or report.get("variants") != variants
-        or set(report.get("controls", {})) != set(variants)
     ):
         raise ValueError("CPU proof does not match the complete experiment bundle")
+    if (
+        report.get("cpu_worker_completion_required")
+        and report.get("cpu_worker_completed") is not True
+    ):
+        raise ValueError("CPU worker cleanup did not complete")
+    validate_worker_completion(path, report)
     if "evidence_inputs" in report:
         validate_inputs(report)
-    for variant, files in report["controls"].items():
-        verify_saved_controls(path.parent / "controls" / variant, files, task_ids)
+    for variant in variants:
+        session_controls(path, report, variant)
     return dict(report)

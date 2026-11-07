@@ -126,19 +126,72 @@ finally: cov.stop();cov.save()
         current.get_data().update(child)
 
 
+@pytest.mark.parametrize(
+    "entry", ["workflow-skills-v1.yaml", "workflow-focused-v1.yaml", "workflow-focused-v2.yaml"]
+)
 @pytest.mark.skipif(not SDK_PYTHON.exists(), reason="Official SDK CPU environment is not prepared")
-def test_real_skill_materialization_and_shared_budget(tmp_path: Path) -> None:
+def test_real_skill_materialization_and_shared_budget(
+    tmp_path: Path, entry: str, frozen_experiment: Path
+) -> None:
+    import shutil
+
+    from gemma_agent_dev.candidates.archive import referenced_files
+
+    source = ROOT / "agent"
+    candidate = tmp_path / "skill-submission"
+    for name in referenced_files(source, source / entry):
+        target = candidate / ("agent.yaml" if name == entry else name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source / name, target)
+    shutil.copyfile(source / "eval_config.yaml", candidate / "eval_config.yaml")
+    extract_archive(
+        frozen_experiment.parent / "workflow-v1/submission.zip", tmp_path / "seed", 10000000
+    )
+    shutil.copytree(tmp_path / "seed/adapters", candidate / "adapters")
+    shutil.copytree(candidate / "adapters/main_lora", candidate / "adapters/tool_lora")
+    for configuration in (candidate / "adapters").rglob("adapter_config.json"):
+        write_json(
+            configuration,
+            {
+                "r": 1,
+                "lora_alpha": 1,
+                "target_modules": ["q_proj"],
+                "peft_type": "LORA",
+                "base_model_name_or_path": "gemma-4-31b-it-qat-w4a16-ct",
+            },
+        )
     script = """from gemma_agent_dev.evaluation.session_worker import deny_external
 sys.addaudithook(deny_external)
 from gemma_agent_dev.evaluation.skill_checks import run
-run(Path(sys.argv[5]),Path(sys.argv[6]),30)
+if sys.argv[7]=='True':
+    try:
+        run(Path(sys.argv[5]),Path(sys.argv[6]),30)
+    except ValueError as error:
+        assert 'colocated_test' in str(error),error
+    else:
+        raise AssertionError('Known test-only false positive was not rejected')
+else:
+    run(Path(sys.argv[5]),Path(sys.argv[6]),30)
 """
+    rejected = entry == "workflow-focused-v1.yaml"
     run_instrumented(
-        SDK_PYTHON, script, [str(ROOT / "agent"), str(tmp_path / "contract")], tmp_path
+        SDK_PYTHON,
+        script,
+        [str(candidate), str(tmp_path / "contract"), str(rejected)],
+        tmp_path,
     )
+    if rejected:
+        assert not (tmp_path / "contract/contract.json").exists()
+        return
     report = json.loads((tmp_path / "contract/contract.json").read_text())
     assert report["shared_budget_enforced"] and report["cases"]["passed"]["status"] == "passed"
     assert report["cases"]["unchanged"]["status"] == "failed"
+    assert report["cases"]["unchanged"]["collected"] == 1
+    assert report["cases"]["failed"]["status"] == "failed"
+    assert report["cases"]["zero_tests"]["collected"] == 0
+    assert report["compiled_agent_chain"]["status"] == "passed"
+    if entry == "workflow-focused-v2.yaml":
+        assert report["cases"]["colocated_test"]["source_changed"] is False
 
 
 @pytest.mark.skipif(
@@ -184,8 +237,9 @@ Path(sys.argv[5]).write_text(json.dumps(result))
     assert result["improved"] is improves and result["adopted"] is False
 
 
+@pytest.mark.parametrize("focused", [False, True])
 @pytest.mark.skipif(not SDK_PYTHON.exists(), reason="Official SDK CPU environment is not prepared")
-def test_sdk_deadline_kills_skill_test_descendants(tmp_path: Path) -> None:
+def test_sdk_deadline_kills_skill_test_descendants(tmp_path: Path, focused: bool) -> None:
     workspace = tmp_path / "workspace"
     (workspace / "src").mkdir(parents=True)
     (workspace / "tests").mkdir()
@@ -227,10 +281,17 @@ workspace=Path(sys.argv[6])
 sandbox=SubprocessSandbox(work_dir=workspace,environment={'PATH':str(Path(sys.executable).parent)+':'+__import__('os').environ['PATH']})
 executor=AdkSandboxCodeExecutor(sandbox=sandbox,timeout_seconds=3)
 runner=_SkillScriptCodeExecutor(executor,script_timeout=3)
-result=asyncio.run(runner.execute_script_async(None,load_skill_from_dir(Path(sys.argv[5])/'skills/python-verification-v1'),'scripts/check.py',['--workspace',str(workspace),'--test','tests/test_timeout.py','--source-root','src','--timeout-seconds','30']))
+focused=sys.argv[7]=='True'
+skill='issue-workflow-v2' if focused else 'python-verification-v1'
+entry='scripts/issue_verification_v2.py' if focused else 'scripts/check.py'
+args=['--workspace',str(workspace),'--test','tests/test_timeout.py','--source-root','src','--timeout-seconds','30']
+if focused:args+=['--module','src.calc']
+result=asyncio.run(runner.execute_script_async(None,load_skill_from_dir(Path(sys.argv[5])/'skills'/skill),entry,args))
 assert result['status']=='error',result
 assert (workspace/'ready').exists(),'test child never started'
 time.sleep(6)
 assert not (workspace/'leaked').exists(),'SDK deadline left a detached test child'
 """
-    run_instrumented(SDK_PYTHON, script, [str(ROOT / "agent"), str(workspace)], tmp_path)
+    run_instrumented(
+        SDK_PYTHON, script, [str(ROOT / "agent"), str(workspace), str(focused)], tmp_path
+    )

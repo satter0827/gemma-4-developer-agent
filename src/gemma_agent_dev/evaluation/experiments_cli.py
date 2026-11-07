@@ -68,7 +68,13 @@ def run(root: Path, args: argparse.Namespace) -> int:
         definition = experiment.definition(root)
         print(
             json.dumps(
-                {"definition_sha256": content_hash(definition), **definition},
+                {
+                    "definition_sha256": content_hash(definition),
+                    **definition,
+                    "completion_budget": experiment.session.completion(
+                        definition["evaluation"], definition["runtime"], len(experiment.task_ids)
+                    ),
+                },
                 ensure_ascii=False,
                 indent=2,
             )

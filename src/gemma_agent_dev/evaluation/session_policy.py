@@ -20,13 +20,25 @@ class SessionPolicy:
     reserve_hours: float
     quota_per_wall_hour: float
     max_runs: int
+    preparation_timeout_seconds: int | None = None
+    evaluation_timeout_seconds: int | None = None
 
     @classmethod
     def parse(cls, raw: Any) -> "SessionPolicy":
-        data = mapping(raw, {f.name for f in fields(cls)}, "session policy")
+        names = {f.name for f in fields(cls)}
+        # Historical definitions have no preparation bound; unknown never admits a GPU job.
+        for optional in ("preparation_timeout_seconds", "evaluation_timeout_seconds"):
+            if isinstance(raw, dict) and optional not in raw:
+                names.remove(optional)
+        data = mapping(raw, names, "session policy")
         if data["enable_prefix_caching"] is not False:
             raise ValueError("Paired experiments require prefix caching disabled")
         for name in set(data) - {"enable_prefix_caching"}:
+            if (
+                name in {"preparation_timeout_seconds", "evaluation_timeout_seconds"}
+                and data[name] is None
+            ):
+                continue
             positive(data[name], name, integer=name.endswith("seconds") or name == "max_runs")
         result = cls(**data)
         result.budget()
@@ -39,7 +51,19 @@ class SessionPolicy:
             {k: v for k, v in asdict(self).items() if k in GpuBudget.__dataclass_fields__}
         )
 
+    def as_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        for optional in ("preparation_timeout_seconds", "evaluation_timeout_seconds"):
+            if value[optional] is None:
+                # Preserve immutable historical definitions.
+                value.pop(optional)
+        return value
+
     def pair_seconds(self, evaluation: dict[str, Any], verification_seconds: int) -> float:
+        if self.evaluation_timeout_seconds is not None:
+            return float(
+                VARIANTS_PER_PAIR * self.evaluation_timeout_seconds + self.cleanup_reserve_seconds
+            )
         return float(
             VARIANTS_PER_PAIR
             * (
@@ -49,3 +73,42 @@ class SessionPolicy:
             )
             + self.cleanup_reserve_seconds
         )
+
+    def completion(
+        self, evaluation: dict[str, Any], runtime: dict[str, Any], count: int
+    ) -> dict[str, Any]:
+        pairs = count * (
+            self.pair_seconds(evaluation, runtime["verification_timeout_seconds"])
+            - self.cleanup_reserve_seconds
+        )
+        known = runtime["vllm"]["startup_timeout"] + pairs + self.cleanup_reserve_seconds
+        preparation = self.preparation_timeout_seconds
+        estimate = None if preparation is None else known + preparation
+        total = estimate if self.evaluation_timeout_seconds is not None else None
+        return {
+            "cost_kind": "upper_bound"
+            if self.evaluation_timeout_seconds is not None
+            else "estimate",
+            "evaluation_timeout_seconds": self.evaluation_timeout_seconds,
+            "pair_count": count,
+            "preparation_seconds": preparation,
+            "model_startup_seconds": runtime["vllm"]["startup_timeout"],
+            "evaluation_seconds": pairs,
+            "cleanup_seconds": self.cleanup_reserve_seconds,
+            "known_upper_seconds": known if self.evaluation_timeout_seconds is not None else None,
+            "known_estimated_seconds": known if self.evaluation_timeout_seconds is None else None,
+            "estimated_total_seconds": estimate
+            if self.evaluation_timeout_seconds is None
+            else None,
+            "total_upper_seconds": total,
+            "job_timeout_seconds": self.job_timeout_seconds,
+            "missing_seconds": None if total is None else max(0, total - self.job_timeout_seconds),
+            "allowed": total is not None and total <= self.job_timeout_seconds,
+        }
+
+    def require_completion(
+        self, evaluation: dict[str, Any], runtime: dict[str, Any], count: int
+    ) -> None:
+        bound = self.completion(evaluation, runtime, count)
+        if not bound["allowed"]:
+            raise ValueError(f"Complete experiment cannot fit the configured deadline: {bound}")

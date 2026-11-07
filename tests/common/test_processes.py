@@ -1,10 +1,28 @@
 import os
+import signal
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
-from gemma_agent_dev.common.processes import process_group
+from gemma_agent_dev.common.processes import process_group, time_limit
+
+
+def test_preparation_deadline_interrupts_and_restores_nested_timers() -> None:
+    original = signal.getsignal(signal.SIGALRM)
+    with pytest.raises(TimeoutError, match="Execution"):
+        with time_limit(0):
+            pass
+    with time_limit(2):
+        with time_limit(1):
+            assert signal.getitimer(signal.ITIMER_REAL)[0] <= 1
+        assert signal.getitimer(signal.ITIMER_REAL)[0] > 1
+        with pytest.raises(TimeoutError, match="Execution"):
+            with time_limit(0.01):
+                time.sleep(0.1)
+    assert signal.getsignal(signal.SIGALRM) == original
+    assert signal.getitimer(signal.ITIMER_REAL) == (0, 0)
 
 
 def test_process_cleanup_preserves_normal_exit_and_log(tmp_path: Path) -> None:

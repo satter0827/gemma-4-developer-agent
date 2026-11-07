@@ -82,24 +82,21 @@ def test_current_compiler_registers_and_resolves_both_loras(
 def test_generation_contract_checks_every_llm_node(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str | None
 ) -> None:
-    import types
+    import yaml
 
-    from gemma_agent_dev.evaluation.official import generation_contract
+    from gemma_agent_dev.candidates.archive import generation_contract
 
-    for name in ["agent.yaml", "sub.yaml", "sampling.yaml"]:
-        (tmp_path / name).touch()
-    data: dict[str, Any] = {
-        "agent.yaml": {"agent_class": "SequentialAgent"},
-        "sub.yaml": {"model": "model", "generate_content_config": {"temperature": 0.2}},
-        "sampling.yaml": {"temperature": 0.2},
-    }
+    (tmp_path / "agent.yaml").write_text(
+        "agent_class: SequentialAgent\nsub_agents:\n- config_path: sub.yaml\n"
+    )
+    data: dict[str, Any] = {"model": "model", "generate_content_config": {"temperature": 0.2}}
     if fault == "implicit":
-        del data["sub.yaml"]["generate_content_config"]
+        del data["generate_content_config"]
     elif fault == "empty":
-        data["sub.yaml"] = {}
-    module: Any = types.ModuleType("adk_submission.yaml_loader")
-    module.load_yaml = lambda path, root: data[path.name]
-    monkeypatch.setitem(sys.modules, "adk_submission.yaml_loader", module)
+        data = {}
+    (tmp_path / "sub.yaml").write_text(yaml.safe_dump(data))
+    (tmp_path / "unselected.yaml").write_text("model: unselected\n")
+
     if fault:
         with pytest.raises(ValueError):
             generation_contract(tmp_path)

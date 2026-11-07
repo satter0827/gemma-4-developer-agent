@@ -1,0 +1,82 @@
+tasks_file: artifacts/reference/tasks.jsonl
+tasks_sha256: e4b3fd60f69dbc2b9213e54eeb9636db78aefe92c1d06269d73d9f5f8f3c8ad6
+tasks:
+- instance_id: fastapi_13537
+  snapshot_sha256: 8b343478bbf8c89247effd611e24c139d256deb20693db15a160d7af60ffa3c9
+  test_paths:
+  - tests/test_form_default.py
+  source_roots:
+  - .
+  import_modules:
+  - fastapi
+  dependency_wheels:
+    dirty_equals-0.11-py3-none-any.whl: b1d7093273fc2f9be12f443a8ead954ef6daaf6746fd42ef3a5616433ee85286
+    inline_snapshot-0.21.1-py3-none-any.whl: 65ad7c27c0846e33109c2501ef9d6e60f830471e7bdbb810837556d0c4549b9e
+    python_multipart-0.0.18-py3-none-any.whl: efe91480f485f6a361427a541db4796f9e1591afc0fb8e7a4ba06bfbc6708996
+    asttokens-3.0.0-py3-none-any.whl: e3078351a059199dd5138cb1c706e6430c05eff2ff136af5eb4790f9d28932e2
+    executing-2.2.1-py2.py3-none-any.whl: 760643d3452b4d777d295bb167ccc74c64a81df23fb5e08eff250c425a4b2017
+- instance_id: rich_3882
+  snapshot_sha256: 0f5d343dab89018c837a58bc0d472434f2eb8abf4bd95a479461fd2e268103a1
+  test_paths:
+  - tests/test_prompt.py
+  source_roots:
+  - .
+  import_modules:
+  - rich
+  dependency_wheels: {}
+- instance_id: requests_6644
+  snapshot_sha256: 1670706e5dd9eb9c83e36a5ddae23ecbf8cf1d5e77ee6cc50ecd1c66221397cc
+  test_paths:
+  - tests/test_adapters.py
+  source_roots:
+  - src
+  - .
+  import_modules:
+  - requests
+  dependency_wheels:
+    Werkzeug-2.2.3-py3-none-any.whl: 56433961bc1f12533306c624f3be5e744389ac61d722175d543e1751285da612
+    Flask-2.2.5-py3-none-any.whl: 58107ed83443e86067e41eff4631b058178191a355886f8e479e347fa1285fdf
+    pytest_httpbin-2.1.0-py3-none-any.whl: b3bf7346cc2ad231447189cd85b458e341056684a7a69d69533dd29692209cdd
+    httpbin-0.10.4-py2.py3-none-any.whl: 71862093f371c3a39cfcdcd2f073aaf610b6433f9d4c0130248e676453fca65d
+  sdk_dependency_wheels:
+    brotlicffi-1.2.0.2-cp39-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl: 22916101de0e7ff535f2edf54b52a85591853b8ae9a98737643defdd3c063a3a
+- instance_id: fastapi_15589
+  snapshot_sha256: ebaf671c28bccb85aa9d8a85735019b4daa6d78d541a679288c64eed88dc76f0
+  test_paths:
+  - tests/test_query_cookie_header_model_extra_params.py
+  source_roots:
+  - .
+  import_modules:
+  - fastapi
+  dependency_wheels:
+    dirty_equals-0.11-py3-none-any.whl: b1d7093273fc2f9be12f443a8ead954ef6daaf6746fd42ef3a5616433ee85286
+    inline_snapshot-0.21.1-py3-none-any.whl: 65ad7c27c0846e33109c2501ef9d6e60f830471e7bdbb810837556d0c4549b9e
+    python_multipart-0.0.18-py3-none-any.whl: efe91480f485f6a361427a541db4796f9e1591afc0fb8e7a4ba06bfbc6708996
+    asttokens-3.0.0-py3-none-any.whl: e3078351a059199dd5138cb1c706e6430c05eff2ff136af5eb4790f9d28932e2
+    executing-2.2.1-py2.py3-none-any.whl: 760643d3452b4d777d295bb167ccc74c64a81df23fb5e08eff250c425a4b2017
+- instance_id: rich_3894
+  snapshot_sha256: 0f5d343dab89018c837a58bc0d472434f2eb8abf4bd95a479461fd2e268103a1
+  test_paths:
+  - tests/test_inspect.py
+  source_roots:
+  - .
+  import_modules:
+  - rich
+  dependency_wheels: {}
+- instance_id: requests_6629
+  snapshot_sha256: 053f2ea73cb7b604f535ee2eabe596dae9df9d7ff54a365d62b4ff0bebab7115
+  test_paths:
+  - tests/test_requests.py
+  source_roots:
+  - src
+  - .
+  import_modules:
+  - requests
+  dependency_wheels:
+    Werkzeug-2.2.3-py3-none-any.whl: 56433961bc1f12533306c624f3be5e744389ac61d722175d543e1751285da612
+    Flask-2.2.5-py3-none-any.whl: 58107ed83443e86067e41eff4631b058178191a355886f8e479e347fa1285fdf
+    pytest_httpbin-2.1.0-py3-none-any.whl: b3bf7346cc2ad231447189cd85b458e341056684a7a69d69533dd29692209cdd
+    httpbin-0.10.4-py2.py3-none-any.whl: 71862093f371c3a39cfcdcd2f073aaf610b6433f9d4c0130248e676453fca65d
+  sdk_dependency_wheels:
+    brotlicffi-1.2.0.2-cp39-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl: 22916101de0e7ff535f2edf54b52a85591853b8ae9a98737643defdd3c063a3a
+wheel_cache: artifacts/reference/task-wheels

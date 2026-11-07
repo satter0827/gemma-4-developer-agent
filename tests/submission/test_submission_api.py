@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from gemma_agent_dev.submission import api
-from gemma_agent_dev.submission.config import SubmissionSettings
+from gemma_agent_dev.submission.config import ReadRetryPolicy, SubmissionSettings
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -29,6 +29,7 @@ def types() -> Any:
                 "ApiStartSubmissionUploadRequest",
                 "ApiCreateSubmissionRequest",
                 "ApiDownloadKernelOutputRequest",
+                "ApiListKernelSessionOutputRequest",
             )
         }
     )
@@ -98,6 +99,91 @@ def test_read_operations(tmp_path: Path) -> None:
         api.dispatch(None, client, {**data, "max_pages": 1}, types(), types())
     with pytest.raises(ValueError):
         api.utc_date(None)
+
+
+def test_fixed_version_file_listing_checks_pagination_and_sdk_fields() -> None:
+    calls = []
+
+    def list_files(request: Any) -> Any:
+        calls.append(request)
+        return NS(
+            files=[NS(file_name="results/run/session.json", url="https://private/?token=secret")],
+            next_page_token="next" if len(calls) == 1 else "",
+        )
+
+    client = NS(
+        competitions=NS(competition_api_client=None),
+        kernels=NS(kernels_api_client=NS(list_kernel_session_output=list_files)),
+    )
+    data = {
+        "operation": "files",
+        "competition": "competition",
+        "source": {"owner": "owner", "kernel": "kernel", "version": 17},
+        "max_pages": 3,
+        "page_size": 1,
+    }
+    assert api.dispatch(None, client, data, types(), types()) == [
+        {"path": "results/run/session.json"},
+        {"path": "results/run/session.json"},
+    ]
+    assert calls[0].version_label == "v17" and calls[1].page_token == "next"
+    with pytest.raises(ValueError, match="fixed Notebook"):
+        api.dispatch(None, client, {**data, "source": {"version": 0}}, types(), types())
+    client.kernels.kernels_api_client.list_kernel_session_output = lambda request: NS(
+        files=[], next_page_token="same"
+    )
+    with pytest.raises(ValueError, match="Repeated"):
+        api.dispatch(None, client, data, types(), types())
+    with pytest.raises(ValueError, match="pagination"):
+        api.dispatch(None, client, {**data, "max_pages": 1}, types(), types())
+
+
+def test_pinned_sdk_output_listing_preserves_paths_and_omits_signed_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sdk = pytest.importorskip("kagglesdk.kaggle_client")
+    requests = pytest.importorskip("requests")
+    kernel_types = importlib.import_module("kagglesdk.kernels.types.kernels_api_service")
+    assert importlib.metadata.version("kagglesdk") == "0.1.37"
+    paths = ["artifacts/results/run/session.json", "artifacts/jobs/job/watchdog.json"]
+    calls: list[dict[str, Any]] = []
+
+    def send(adapter: Any, request: Any, **kwargs: Any) -> Any:
+        assert request.url.endswith("/kernels.KernelsApiService/ListKernelSessionOutput")
+        body = json.loads(request.body)
+        assert body["versionLabel"] == "v17"
+        assert body.get("pageToken", "") == ("next" if calls else "")
+        calls.append(body)
+        response = requests.Response()
+        response.request, response.url = request, request.url
+        response.status_code = 200
+        response.headers["Content-Type"] = "application/json"
+        response.raw = io.BytesIO(
+            json.dumps(
+                {
+                    "files": [{"fileName": paths[len(calls) - 1], "url": "signed-secret"}],
+                    "nextPageToken": "next" if len(calls) == 1 else "",
+                }
+            ).encode()
+        )
+        return response
+
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", send)
+    with sdk.KaggleClient(api_token="synthetic") as client:
+        rows = api.dispatch(
+            None,
+            client,
+            {
+                "operation": "files",
+                "competition": "competition",
+                "source": {"owner": "owner", "kernel": "kernel", "version": 17},
+                "max_pages": 3,
+                "page_size": 1,
+            },
+            types(),
+            kernel_types,
+        )
+    assert rows == [{"path": path} for path in paths] and len(calls) == 2
 
 
 @pytest.mark.parametrize("failure", ["header", "stream", "read", "status"])
@@ -305,6 +391,110 @@ def test_gateway_does_not_leak_worker_errors(monkeypatch: pytest.MonkeyPatch) ->
     for operation in ("upload", "create", "unknown"):
         with pytest.raises(ValueError):
             api.worker({"operation": operation})
+
+
+@pytest.mark.parametrize(
+    "operation,statuses,expected_calls",
+    [
+        ("files", [503, None], 2),
+        ("kernel", [429, None], 2),
+        ("create", [503], 1),
+        ("upload", [429], 1),
+        ("files", [403], 1),
+        ("kernel", [429] * 5, 5),
+        ("files", [429] * 5, 3),
+    ],
+)
+def test_read_retry_is_bounded_and_never_repeats_writes(
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    statuses: list[int | None],
+    expected_calls: int,
+) -> None:
+    settings = SubmissionSettings.load(ROOT, Path("configs/submission/policy-read-v2.yaml"))
+    gateway = api.KaggleGateway(ROOT, settings, Path("python"))
+    now = [0.0]
+    timeouts: list[float] = []
+
+    def run(*args: Any, **kwargs: Any) -> Any:
+        timeouts.append(kwargs["timeout"])
+        status = statuses[len(timeouts) - 1]
+        return NS(
+            returncode=int(status is not None),
+            stdout=json.dumps({"http_status": status}) if status else "[]",
+        )
+
+    def sleep(seconds: float) -> None:
+        now[0] += seconds
+
+    monkeypatch.setattr("gemma_agent_dev.submission.api.subprocess.run", run)
+    monkeypatch.setattr("gemma_agent_dev.submission.api.time.monotonic", lambda: now[0])
+    monkeypatch.setattr("gemma_agent_dev.submission.api.time.sleep", sleep)
+    if None in statuses:
+        assert gateway.call(operation, execute=True) == []
+    else:
+        with pytest.raises(RuntimeError, match=f"HTTP {statuses[0]}"):
+            gateway.call(operation, execute=True)
+    assert len(timeouts) == expected_calls
+    assert all(left >= right > 0 for left, right in zip(timeouts, timeouts[1:], strict=False))
+    assert now[0] < timeouts[0]
+    if operation in {"create", "upload"}:
+        assert now[0] == 0
+
+
+def test_retry_after_is_respected_without_extending_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = SubmissionSettings.load(ROOT, Path("configs/submission/policy-read-v2.yaml"))
+    gateway = api.KaggleGateway(ROOT, settings, Path("python"))
+    now = [0.0]
+    calls = []
+
+    def run(*args: Any, **kwargs: Any) -> Any:
+        calls.append(kwargs["timeout"])
+        return NS(
+            returncode=int(len(calls) == 1),
+            stdout=json.dumps({"http_status": 429, "retry_after_seconds": 12})
+            if len(calls) == 1
+            else "[]",
+        )
+
+    def sleep(seconds: float) -> None:
+        now[0] += seconds
+
+    monkeypatch.setattr("gemma_agent_dev.submission.api.subprocess.run", run)
+    monkeypatch.setattr("gemma_agent_dev.submission.api.time.monotonic", lambda: now[0])
+    monkeypatch.setattr("gemma_agent_dev.submission.api.time.sleep", sleep)
+    assert gateway.call("files") == []
+    assert now[0] == 12 and calls == [30, 18]
+
+
+@pytest.mark.parametrize(
+    "header,expected",
+    [("7", 7), ("Thu, 22 Oct 2026 00:00:09 GMT", 9), ("bad", None), ("nan", None), ("-1", None)],
+)
+def test_sdk_failure_only_exposes_safe_status_and_retry_delay(
+    monkeypatch: pytest.MonkeyPatch, header: str, expected: int | None
+) -> None:
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> "Clock":
+            return cls(2026, 10, 22, tzinfo=UTC)
+
+    class RemoteError(RuntimeError):
+        response = NS(status_code=429, headers={"Retry-After": header})
+
+    error = RemoteError("https://private.invalid/?token=secret")
+    monkeypatch.setattr(api, "datetime", Clock)
+    assert api.failure_details(error) == {"http_status": 429, "retry_after_seconds": expected}
+
+
+@pytest.mark.parametrize(
+    "value", [{"attempts": 0, "initial_delay_seconds": 1}, {"attempts": 2}, None]
+)
+def test_read_retry_policy_requires_explicit_positive_limits(value: Any) -> None:
+    with pytest.raises(ValueError):
+        ReadRetryPolicy.parse(value)
 
 
 def test_worker_and_main(

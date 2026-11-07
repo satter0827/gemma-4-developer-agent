@@ -22,6 +22,19 @@ def timestamp(value: Any) -> datetime:
 
 
 @dataclass(frozen=True)
+class ReadRetryPolicy:
+    attempts: int
+    initial_delay_seconds: int
+
+    @classmethod
+    def parse(cls, value: Any) -> "ReadRetryPolicy":
+        data = mapping(value, {f.name for f in fields(cls)}, "read retry policy")
+        for name, setting in data.items():
+            positive(setting, name, integer=True)
+        return cls(**data)
+
+
+@dataclass(frozen=True)
 class SubmissionSettings:
     competition: str
     state_branch: str
@@ -40,14 +53,17 @@ class SubmissionSettings:
     page_size: int
     max_pages: int
     seed_candidates: list[str]
+    read_retry: ReadRetryPolicy | None = None
 
     @classmethod
     def load(cls, root: Path, path: Path) -> "SubmissionSettings":
-        data = mapping(
-            yaml.safe_load(project_path(root, str(path)).read_text()),
-            {f.name for f in fields(cls)},
-            "submission settings",
-        )
+        raw = yaml.safe_load(project_path(root, str(path)).read_text())
+        names = {f.name for f in fields(cls)} - {"read_retry"}
+        if isinstance(raw, dict) and "read_retry" in raw:
+            names.add("read_retry")
+        data = mapping(raw, names, "submission settings")
+        if "read_retry" in data:
+            data["read_retry"] = ReadRetryPolicy.parse(data["read_retry"])
         for key in ("competition", "state_branch"):
             if not isinstance(data[key], str) or not re.fullmatch(r"[\w/-]+", data[key]):
                 raise ValueError(f"Invalid {key}")

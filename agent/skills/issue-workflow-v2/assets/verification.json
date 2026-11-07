@@ -1,0 +1,8 @@
+{
+  "script": "scripts/issue_verification_v2.py",
+  "module_argument": "--module",
+  "resources": [
+    "assets/policy.json",
+    "references/verification.md"
+  ]
+}

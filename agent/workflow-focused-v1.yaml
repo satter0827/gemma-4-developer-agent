@@ -1,0 +1,14 @@
+name: swe_focused_agent
+model: gemma-4-31b-it-qat-w4a16-ct
+adapter: main_lora
+instruction: !include prompts/workflow-focused-v1.md
+tools:
+  - run_command
+  - read_file
+  - edit_file
+  - write_file
+  - get_status
+  - submit_patch
+skills:
+  - skills/issue-workflow-v1
+generate_content_config: !include configs/focused-sampling.yaml

@@ -11,6 +11,7 @@
 | ログの形式と保存・秘匿条件を理解する | [実行ログ](design/observability.md) |
 | 証拠の照合条件を理解する | [検証と保存](design/validation.md) |
 | 提出判断と復旧条件を理解する | [提出の状態管理](design/submission.md) |
+| 日常の操作を準備から結果確認まで通す | [日常の開発フロー](operations/workflows.md) |
 | 環境を準備する | [環境の準備](operations/setup.md) |
 | 保存パッチと比較課題を検証する | [パッチ診断](operations/diagnostics.md) |
 | 候補を固定して評価・分析する | [評価手順](operations/evaluation.md) |

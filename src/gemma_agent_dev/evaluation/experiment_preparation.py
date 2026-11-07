@@ -47,7 +47,7 @@ def selected_settings(root: Path, experiment: Experiment) -> dict[str, Preflight
 
 
 @logged("experiment.prepare")
-def prepare(root: Path, config: Path) -> Path:
+def prepare(root: Path, config: Path, *, quality_report: Path | None = None) -> Path:
     experiment = Experiment.load(root, config)
     check_installation(root)
     settings = selected_settings(root, experiment)
@@ -77,7 +77,12 @@ def prepare(root: Path, config: Path) -> Path:
     }
     write_json(path, report)
     try:
-        verify_quality(next(iter(settings.values())), output)
+        if quality_report is None:
+            verify_quality(next(iter(settings.values())), output)
+        else:
+            from gemma_agent_dev.candidates.quality import reuse
+
+            report["quality"] = reuse(root, quality_report)
         diagnostic_report = diagnose(diagnostic) / "report.json"
         report["controls"] = {
             "path": str(diagnostic_report.relative_to(root)),

@@ -784,6 +784,16 @@ def test_gpu_optimization_boundaries_with_synthetic_server(
         ),
     )
     monkeypatch.setattr(runtime, "implementation_changed", lambda *a: True)
+    monkeypatch.setattr(
+        runtime,
+        "behavior",
+        lambda *a: dict(
+            submission_count=None,
+            nonempty_submission_then_empty_final=None,
+            first_implementation_edit_trace_call=None,
+            skill_script_calls=None,
+        ),
+    )
     monkeypatch.setattr(runtime, "reflect", lambda *a: "general procedure")
 
     def search(

@@ -1,14 +1,28 @@
 """Verify actual GEPA search with synthetic outcomes and no network or GPU imports."""
 
 import json
+import os
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 
+from gemma_agent_dev.common.ownership import own_subprocesses
 from gemma_agent_dev.evaluation.optimization_runtime import run
 from gemma_agent_dev.evaluation.session_worker import deny_external
 
 
 def main() -> None:
+    registry = os.environ.get("GEMMA_PROCESS_REGISTRY")
+    scope = (
+        own_subprocesses(Path(registry), os.environ["GEMMA_PROCESS_OWNER"])
+        if registry
+        else nullcontext()
+    )
+    with scope:
+        execute()
+
+
+def execute() -> None:
     sys.addaudithook(deny_external)
     print(
         run(

@@ -35,7 +35,26 @@ def export(root: Path, session: Path, review_path: Path, destination: Path, max_
         "definition_sha256": sealed["definition_sha256"],
         "source_sha256": sealed["source_sha256"],
         "candidate_hashes": sealed["variants"],
-        "metrics": {**summary["counts"], "cell_errors": summary["cell_errors"]},
+        "metrics": {
+            **summary["counts"],
+            "cell_errors": summary["cell_errors"],
+            **{
+                key: value
+                for key, value in summary["timings"].items()
+                if key
+                in {
+                    "dependencies_seconds",
+                    "bootstrap_seconds",
+                    "inputs_seconds",
+                    "controls_seconds",
+                    "cpu_seconds",
+                    "model_startup_seconds",
+                    "evaluation_seconds",
+                    "cleanup_seconds",
+                    "total_seconds",
+                }
+            },
+        },
         "interpretation": note["interpretation"],
         "prompts": [],
         "observations": summary["observations"],
@@ -44,6 +63,12 @@ def export(root: Path, session: Path, review_path: Path, destination: Path, max_
             "sdk_version": runtime["packages"]["swegemma"],
             "verification_timeout_seconds": runtime["verification_timeout_seconds"],
             "max_model_len": runtime["vllm"]["max_model_len"],
+            **({"generation": sealed["generation"]} if "generation" in sealed else {}),
+            **(
+                {"evaluation_timeout_seconds": definition["session"]["evaluation_timeout_seconds"]}
+                if "evaluation_timeout_seconds" in definition.get("session", {})
+                else {}
+            ),
         },
         "quota_hours": summary["quota_hours"],
         **{k: note[k] for k in ("decision", "parent_candidates", "assessments")},

@@ -66,4 +66,5 @@ def main(
             timeout=remaining,
             progress_interval=progress_interval_seconds,
             storage=ARTIFACTS_ROOT,
+            started_at=start,
         )

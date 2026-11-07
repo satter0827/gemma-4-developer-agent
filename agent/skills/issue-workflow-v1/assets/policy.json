@@ -1,0 +1,7 @@
+{
+  "max_failures": 3,
+  "max_message_characters": 500,
+  "exploration_seconds": 90,
+  "verification_reserve_seconds": 90,
+  "submission_reserve_seconds": 15
+}
